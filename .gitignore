@@ -1,0 +1,8 @@
+# 构建产物（由 build.sh / package.sh 生成，体积大且可重建）
+build/
+
+# macOS 元数据
+.DS_Store
+
+# 临时/敏感
+*.log
