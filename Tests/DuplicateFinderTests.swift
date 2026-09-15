@@ -11,10 +11,48 @@ struct CleanupItem: Identifiable {
 }
 enum Fmt { static func size(_ b: Int64) -> String { ByteCountFormatter.string(fromByteCount: b, countStyle: .file) } }
 
+/// 自建测试夹具。
+///
+/// 早期版本直接扫描 `/tmp/duprealtest`，依赖手工创建的文件 ——
+/// 那样在别的机器上（或临时目录被清理后）必然失败，测试会假报错。
+/// 现在自己造、自己清，保证可重复。
+func buildFixture() -> URL {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("mc_dup_test_\(UUID().uuidString)")
+    let fm = FileManager.default
+    for sub in ["a", "b", "c"] {
+        try? fm.createDirectory(at: root.appendingPathComponent(sub),
+                                withIntermediateDirectories: true)
+    }
+
+    let big = Data(repeating: 0xAB, count: 3_000_000)   // 3 MB
+    let diff = Data(repeating: 0xCD, count: 3_000_000)  // 同尺寸、内容不同
+    let head = Data(repeating: 0x48, count: 4096)       // 相同的前 4 KB
+
+    func write(_ rel: String, _ data: Data) {
+        try? data.write(to: root.appendingPathComponent(rel))
+    }
+
+    write("a/big1.bin", big)
+    write("b/big2.bin", big)                        // 与 big1 完全相同 → 应检出
+    write("c/diff.bin", diff)                       // 同尺寸不同内容 → 应排除
+    write("a/tiny.bin", Data(repeating: 0x01, count: 100))  // 小于 1MB → 应跳过
+    write("a/head_same.bin", head + Data(repeating: 0x41, count: 4_000_000))  // 前4KB同、整体不同
+    write("b/head_same.bin", head + Data(repeating: 0x42, count: 4_000_000))
+
+    // 硬链接：同一份数据两个路径 → 不算重复
+    try? fm.linkItem(atPath: root.appendingPathComponent("a/big1.bin").path,
+                     toPath: root.appendingPathComponent("c/hardlink.bin").path)
+    return root
+}
+
 // 让 DuplicateFinder 的非隔离静态方法可被调用
 @MainActor func run() async {
+    let fixture = buildFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
     let finder = DuplicateFinder()
-    finder.roots = [URL(fileURLWithPath: "/tmp/duprealtest")]
+    finder.roots = [fixture]
     finder.startScan()
 
     // 等扫描结束

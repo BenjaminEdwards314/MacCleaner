@@ -30,7 +30,7 @@ struct ContentView: View {
     @State private var resultText = ""
     @State private var isCleaning = false
     @State private var cleanProgress = ""
-    @State private var section: Section = .clean
+    @State private var section: Section = Section.initialFromLaunchArguments
     /// 待清理项，由各子视图通过 onClean 回调提交
     @State private var pendingClean: PendingClean?
 
@@ -78,6 +78,19 @@ struct ContentView: View {
             case .uninstall, .history, .health: return "工具"
             }
         }
+
+        /// 启动参数 `--section=duplicates` 可直接打开指定页面。
+        ///
+        /// 用途：界面验证与截图。macOS 在未授予辅助功能权限时会拦截合成点击事件，
+        /// 无法用脚本操作界面；有了这个入口就能逐个页面截图核对，而不必手工点。
+        /// 非法值一律回落到「清理」，不影响正常启动。
+        static var initialFromLaunchArguments: Section {
+            let prefix = "--section="
+            guard let arg = CommandLine.arguments.first(where: { $0.hasPrefix(prefix) })
+            else { return .clean }
+            let raw = String(arg.dropFirst(prefix.count))
+            return Section(rawValue: raw) ?? .clean
+        }
     }
 
     private var allItems: [CleanupItem] { scanner.groups.flatMap(\.items) }
@@ -110,6 +123,18 @@ struct ContentView: View {
             Button("好") {}
         } message: {
             Text(resultText)
+        }
+        .task {
+            // 调试/验证入口：`--autoscan` 启动后自动触发当前页面的扫描。
+            // 与 --section 配合，可无人值守地把每个页面的「有数据」状态截图核对。
+            guard CommandLine.arguments.contains("--autoscan") else { return }
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            switch section {
+            case .uninstall:    inventory.startScan()
+            case .duplicates:   duplicateFinder.startScan()
+            case .clean:        scanner.startScan(deepScan: false)
+            default:            break
+            }
         }
     }
 

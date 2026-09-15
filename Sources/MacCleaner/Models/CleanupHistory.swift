@@ -23,21 +23,28 @@ final class CleanupHistory: ObservableObject {
 
     @Published private(set) var records: [CleanupRecord] = []
 
-    /// 历史文件位置
-    static var fileURL: URL {
+    /// 历史文件位置。
+    ///
+    /// 可注入：测试必须能指向临时文件，否则 `clear()` 会删掉用户真实的历史。
+    /// 早期测试直接操作真实路径，跑一次测试就清空了使用者的清理记录。
+    let fileURL: URL
+
+    /// 默认位置
+    nonisolated static var defaultFileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory() + "/Library/Application Support")
         return base.appendingPathComponent("MacCleaner/history.json")
     }
 
-    init() {
+    init(fileURL: URL = CleanupHistory.defaultFileURL) {
+        self.fileURL = fileURL
         load()
     }
 
     // MARK: - 读写
 
     private func load() {
-        let url = Self.fileURL
+        let url = fileURL
         guard let data = try? Data(contentsOf: url) else { return }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -52,7 +59,7 @@ final class CleanupHistory: ObservableObject {
         encoder.outputFormatting = [.prettyPrinted]
         guard let data = try? encoder.encode(records) else { return }
 
-        let url = Self.fileURL
+        let url = fileURL
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -92,7 +99,7 @@ final class CleanupHistory: ObservableObject {
 
     func clear() {
         records = []
-        try? FileManager.default.removeItem(at: Self.fileURL)
+        try? FileManager.default.removeItem(at: fileURL)
     }
 
     // MARK: - 统计

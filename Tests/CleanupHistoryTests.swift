@@ -12,14 +12,18 @@ import Foundation
     var fail = 0
     func expect(_ c: Bool, _ m: String) { print("\(c ? "✅" : "❌") \(m)"); if !c { fail += 1 } }
 
-    // 用临时目录，避免污染真实历史
-    let tmp = URL(fileURLWithPath: "/tmp/histrun/store")
-    try? FileManager.default.removeItem(at: tmp)
+    // 使用隔离的临时文件。
+    // 绝不能用默认路径：clear() 会删掉用户真实的清理历史。
+    let store = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("mc_history_test_\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: store) }
 
     print("=== CleanupHistory 持久化测试 ===")
-    let h = CleanupHistory()
-    // 清掉真实环境可能已有的记录
-    h.clear()
+    print("临时存储: \(store.lastPathComponent)")
+    let realFile = CleanupHistory.defaultFileURL
+    let realExistsBefore = FileManager.default.fileExists(atPath: realFile.path)
+
+    let h = CleanupHistory(fileURL: store)
     expect(h.records.isEmpty, "初始为空")
     expect(h.totalFreed == 0, "初始累计为 0")
 
@@ -44,7 +48,7 @@ import Foundation
     expect(h.records.count == 1, "空条目不记录")
 
     // 持久化：新实例应能读回
-    let h2 = CleanupHistory()
+    let h2 = CleanupHistory(fileURL: store)
     expect(h2.records.count == 1, "重新加载后有 1 条（实际 \(h2.records.count)）")
     expect(h2.totalFreed == 3000, "重新加载后累计 3000（实际 \(h2.totalFreed)）")
 
@@ -75,10 +79,15 @@ import Foundation
     // clear
     h2.clear()
     expect(h2.records.isEmpty, "清空后为空")
-    let h3 = CleanupHistory()
+    let h3 = CleanupHistory(fileURL: store)
     expect(h3.records.isEmpty, "清空后重新加载仍为空")
 
-    print("\n历史文件位置: \(CleanupHistory.fileURL.path)")
+    // 最关键的一条：测试全程不得触碰用户真实的历史文件
+    let realExistsAfter = FileManager.default.fileExists(atPath: realFile.path)
+    expect(realExistsBefore == realExistsAfter,
+           "★测试不得创建或删除用户真实的历史文件（\(realFile.lastPathComponent)）")
+
+    print("\n测试存储: \(store.path)")
     print(fail == 0 ? "\n✅ 全部通过" : "\n❌ \(fail) 项失败")
     exit(fail == 0 ? 0 : 1)
 }

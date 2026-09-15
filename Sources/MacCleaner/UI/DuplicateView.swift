@@ -217,7 +217,9 @@ struct DuplicateView: View {
 
             Spacer()
 
-            // 批量勾选：这是唯一会批量选中删除项的地方，规则明确写在按钮上
+            // 批量勾选：这是唯一会批量选中删除项的地方，规则明确写在菜单项上。
+            // 必须显式指定 menuStyle/buttonStyle —— 默认样式会渲染成带蓝色箭头的
+            // 强调控件，在一排普通按钮里显得像「已激活」，容易被误认成当前状态。
             Menu {
                 ForEach(DuplicateFinder.KeepPolicy.allCases) { p in
                     Button("每组\(p.title)，其余勾选删除") {
@@ -230,7 +232,9 @@ struct DuplicateView: View {
             } label: {
                 Label("批量勾选", systemImage: "checklist")
             }
-            .frame(width: 130)
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.bordered)
+            .fixedSize()
 
             Button {
                 showCleanConfirm = true
