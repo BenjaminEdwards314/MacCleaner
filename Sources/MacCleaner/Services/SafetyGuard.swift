@@ -161,6 +161,14 @@ enum SafetyGuard {
         // 而不是需要往里钻的容器。改成只允许子路径会静默破坏既有清理项。
         for f in allowedPrefixes where path == f || path.hasPrefix(f + "/") { return }
 
+        // ---------- 1b. 下载目录顶层的旧安装包 ----------
+        // 扫描器会把 ~/Downloads 顶层的 .dmg/.pkg/.iso/.mpkg 作为「下载残留」列出，
+        // 但白名单里没有 Downloads，导致这些条目永远删不掉 —— 扫描产出与删除授权
+        // 自相矛盾，用户点「清理所选」只会看到失败。
+        // 这里只放行与扫描条件完全一致的情况：顶层文件 + 安装包扩展名。
+        // 不递归子目录，也不放行其他类型，避免把整个下载目录变成可删区域。
+        if isDownloadInstaller(path, home: home) { return }
+
         // ---------- 2. 未命中白名单：必须携带授权 ----------
         switch grant {
         case .none:
@@ -197,6 +205,25 @@ enum SafetyGuard {
             if first.hasSuffix(".app") { return true }
         }
         return false
+    }
+
+    /// 路径是否为 `~/Downloads` **顶层**的安装包文件。
+    ///
+    /// 判定条件必须与 `StorageScanner.scanDownloads` 的产出条件一致，
+    /// 否则又会出现「扫得到但删不掉」或「放行了扫不到的东西」两种偏差。
+    /// 这里刻意只校验「位置 + 扩展名」这两条静态属性：
+    /// 修改时间与体积属于扫描策略，会随后续调整而变化，
+    /// 把它们写进安全校验会让护栏跟着业务参数漂移。
+    private static func isDownloadInstaller(_ path: String, home: String) -> Bool {
+        let dir = "\(home)/Downloads/"
+        guard path.hasPrefix(dir) else { return false }
+
+        // 必须是顶层：剩余部分不能再含 "/"，即排除所有子目录
+        let rest = path.dropFirst(dir.count)
+        guard !rest.isEmpty, !rest.contains("/") else { return false }
+
+        let ext = (rest as NSString).pathExtension.lowercased()
+        return ["dmg", "pkg", "iso", "mpkg"].contains(ext)
     }
 
     static func isAllowed(_ url: URL) -> Bool {

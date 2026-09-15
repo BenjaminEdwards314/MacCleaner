@@ -85,6 +85,39 @@ for (p, g, expectAllow) in grantCases {
 }
 print("\n授权用例失败: \(bad)")
 
+// 下载残留：扫描器会列出 ~/Downloads 顶层的安装包，
+// 但白名单里没有 Downloads，导致这些条目永远删不掉。
+// 用户点「清理所选」只看到失败，却不知道是护栏拦的。
+// 这里把放行边界钉死：只允许顶层安装包，子目录与其他类型一律拒绝。
+let dlCases: [(String, Bool)] = [
+  ("\(home)/Downloads/Hermes-Setup.dmg", true),
+  ("\(home)/Downloads/X.pkg",            true),
+  ("\(home)/Downloads/a.iso",            true),
+  ("\(home)/Downloads/b.mpkg",           true),
+  ("\(home)/Downloads/UPPER.DMG",        true),
+  // 子目录必须拒绝 —— 不能把整个下载目录变成可删区域
+  ("\(home)/Downloads/sub/x.dmg",        false),
+  ("\(home)/Downloads/2024/a.pkg",       false),
+  ("\(home)/Downloads/a/b/c/d.iso",      false),
+  // 非安装包必须拒绝
+  ("\(home)/Downloads/photo.jpg",        false),
+  ("\(home)/Downloads/report.pdf",       false),
+  ("\(home)/Downloads/data.zip",         false),
+  ("\(home)/Downloads/script.sh",        false),
+  ("\(home)/Downloads/noext",            false),
+  // 目录本身必须拒绝
+  ("\(home)/Downloads",                  false),
+]
+print("\n=== 下载残留放行边界 ===")
+var dlBad = 0
+for (p, expectAllow) in dlCases {
+    let got = newVerdict(p, nil) == "允许"
+    let ok = got == expectAllow
+    if !ok { dlBad += 1 }
+    print("\(ok ? "✅" : "❌") 期望\(expectAllow ? "允许" : "拒绝") 实际\(got ? "允许" : "拒绝")  \(p.replacingOccurrences(of: home, with: "~"))")
+}
+print("\n下载边界失败: \(dlBad)")
+
 print("\n── isInsideTrash：决定「永久删除」还是「移入废纸篓」──")
 var trashBad = 0
 func trashCheck(_ expect: Bool, _ path: String, _ note: String = "") {
@@ -103,5 +136,5 @@ trashCheck(false, "/tmp/.Trash/x")
 trashCheck(false, "\(home)/.Trashcan/x", "★前缀相近")
 trashCheck(false, "\(home)/.Trash/../Documents/a", "★穿越逃逸")
 
-print("\n安全倒退: \(regressions.count)   授权失败: \(bad)   isInsideTrash 失败: \(trashBad)")
-exit((regressions.isEmpty && bad == 0 && trashBad == 0) ? 0 : 1)
+print("\n安全倒退: \(regressions.count)   授权失败: \(bad)   下载边界失败: \(dlBad)   isInsideTrash 失败: \(trashBad)")
+exit((regressions.isEmpty && bad == 0 && trashBad == 0 && dlBad == 0) ? 0 : 1)

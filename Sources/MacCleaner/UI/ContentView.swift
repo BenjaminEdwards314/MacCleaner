@@ -406,13 +406,25 @@ struct ContentView: View {
                 }
                 history.record(items: freedItems, freed: outcome.freed, failureCount: outcome.failures.count)
 
-                var msg = "已清理 \(outcome.deleted) 项，释放 \(Fmt.size(outcome.freed))。"
+                var msg: String
+                if outcome.deleted == 0 && !outcome.failures.isEmpty {
+                    // 全部失败：不能说「已清理 0 项，释放 Zero KB」还补一句
+                    // 「内容已移入废纸篓」—— 那是假话，会让人以为按钮没反应。
+                    msg = "没有删除任何内容，\(outcome.failures.count) 项被安全护栏拦下：\n"
+                } else {
+                    msg = "已清理 \(outcome.deleted) 项，释放 \(Fmt.size(outcome.freed))。"
+                    if !outcome.failures.isEmpty {
+                        msg += "\n\n另有 \(outcome.failures.count) 项失败：\n"
+                    }
+                }
                 if !outcome.failures.isEmpty {
-                    msg += "\n\n\(outcome.failures.count) 项失败：\n"
                     msg += outcome.failures.prefix(5).map { "· \($0.0.lastPathComponent)：\($0.1)" }
                         .joined(separator: "\n")
                 }
-                msg += "\n\n内容已移入废纸篓，可随时恢复。"
+                // 只有在确实有东西被移走时才提废纸篓
+                if outcome.deleted > 0 {
+                    msg += "\n\n内容已移入废纸篓，可随时恢复。"
+                }
                 resultText = msg
                 showResult = true
 
