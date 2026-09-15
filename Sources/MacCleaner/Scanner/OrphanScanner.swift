@@ -27,6 +27,17 @@ struct OrphanGroup: Identifiable {
     var totalSize: Int64 { items.reduce(0) { $0 + $1.size } }
 }
 
+/// 极简加锁盒子：`Task.detached` 里跨线程读写节流时间戳用。
+private final class Locked<T>: @unchecked Sendable {
+    private var value: T
+    private let lock = NSLock()
+    init(_ value: T) { self.value = value }
+    func withLock<R>(_ body: (inout T) -> R) -> R {
+        lock.lock(); defer { lock.unlock() }
+        return body(&value)
+    }
+}
+
 /// 扫描「已卸载应用留下的残余文件」。
 ///
 /// 判定思路
@@ -80,9 +91,24 @@ final class OrphanScanner: ObservableObject {
         "Group Containers",
     ]
 
-    /// 应用安装位置
+    /// 应用安装位置。
+    ///
+    /// 必须包含系统应用：Apple 自家应用用反向域名做标识，但它们的
+    /// group container 名不含 `com.apple.`，只扫 /Applications 会漏掉
+    /// 归属关系（实测 Shortcuts 的 `group.is.workflow.*` 就是这样）。
     nonisolated static var appDirs: [URL] {
-        ["/Applications", "\(NSHomeDirectory())/Applications"].map { URL(fileURLWithPath: $0) }
+        [
+            "/Applications", "\(NSHomeDirectory())/Applications",
+            "/System/Applications",
+            "/System/Applications/Utilities",
+            "/System/Library/CoreServices",
+            "/System/Library/CoreServices/Applications",
+            // 非标准安装位置的系统级组件。实测 macFUSE 把 fsmodule 装在
+            // `/Library/Filesystems/macfuse.fs/Contents/Resources/...appex`，
+            // 不扫这里就会把它的 Application Scripts 误判成孤儿。
+            // 整个 /Library 只有 ~125 个 Info.plist，代价可以接受。
+            "/Library",
+        ].map { URL(fileURLWithPath: $0) }
     }
 
     var totalSize: Int64 { groups.reduce(0) { $0 + $1.totalSize } }
@@ -100,29 +126,60 @@ final class OrphanScanner: ObservableObject {
         groups = []
         progressText = "正在枚举已安装应用…"
 
-        task = Task.detached(priority: .userInitiated) { [weak self] in
-            guard let self else { return }
-
-            let known = await Self.collectKnownBundleIDs { text in
-                Task { @MainActor in self.progressText = text }
-            }
-            await MainActor.run { self.knownIDCount = known.count }
-
-            if Task.isCancelled { return }
-
-            let found = await Self.findOrphans(known: known) { text in
-                Task { @MainActor in self.progressText = text }
-            }
-
-            await MainActor.run {
-                self.groups = found.groups
-                self.scannedDirCount = found.scanned
-                self.skippedDirCount = found.skipped
-                self.isScanning = false
-                self.hasScanned = true
-                self.progressText = ""
-            }
+        // 必须用 `Task.detached`，不能用普通 `Task`。
+        //
+        // `startScan()` 是从 ContentView 的 `.task { }` 里调用的，而普通
+        // `Task` 会**继承调用方的取消状态** —— `.task` 结束时会把子任务
+        // 一起取消，扫描跑到一半就死了。表现是界面永远停在转圈：
+        // 实测状态确实写进去了（isScanning=false hasScanned=true
+        // groups=17），但视图没收到更新，窗口内存只有 2288 字节
+        // （正常渲染 54 项列表需要几百 KB），说明根本没重绘。
+        // detached 不继承取消状态，扫描能独立跑完。
+        task = Task.detached { [weak self] in
+            await self?.runScan()
         }
+    }
+
+    /// 真正执行扫描。
+    ///
+    /// 这里刻意**不用** `Task.detached` + 手工 `MainActor.run` 回跳。
+    /// 那种写法在处理结束时虽然把状态写对了（实测 `isScanning=false`
+    /// `hasScanned=true` `groups=17` 全部正确），但 SwiftUI 收不到
+    /// `objectWillChange`，界面会一直停在转圈和「开始扫描」上 ——
+    /// 看起来像卡死，实际数据早就好了。
+    /// 改成 `@MainActor` 方法 + 内部 `Task.detached` 做重活，
+    /// 状态更新全部回到主 actor，`@Published` 才能正常驱动视图。
+    private func runScan() async {
+        // 进度回调节流：枚举阶段每个 app 都会回调（本机 280+ 次），
+        // 不限流会淹没主线程。
+        let lastUpdate = Locked(Date.distantPast)
+        let report: @Sendable (String) -> Void = { [weak self] text in
+            let now = Date()
+            guard lastUpdate.withLock({ now.timeIntervalSince($0) > 0.4 }) else { return }
+            lastUpdate.withLock { $0 = now }
+            Task { @MainActor in self?.progressText = text }
+        }
+
+        // 重活放后台线程：读 Info.plist、起 codesign 子进程、算目录体积
+        // 都不该占用主线程。
+        let known = await Task.detached(priority: .userInitiated) {
+            await Self.collectKnownBundleIDs(progress: report)
+        }.value
+
+        guard !Task.isCancelled else { return }
+        knownIDCount = known.count
+
+        let found = await Task.detached(priority: .userInitiated) {
+            await Self.findOrphans(known: known, progress: report)
+        }.value
+
+        guard !Task.isCancelled else { return }
+        groups = found.groups
+        scannedDirCount = found.scanned
+        skippedDirCount = found.skipped
+        isScanning = false
+        hasScanned = true
+        progressText = ""
     }
 
     // MARK: - 第一步：收集已知 bundle id
@@ -134,21 +191,46 @@ final class OrphanScanner: ObservableObject {
     nonisolated static func collectKnownBundleIDs(
         progress: @escaping (String) -> Void
     ) async -> Set<String> {
-        var known = Set<String>()
         let fm = FileManager.default
 
+        // 先收集所有待处理的 app。
+        var allApps: [URL] = []
         for dir in appDirs {
             guard let apps = try? fm.contentsOfDirectory(
                 at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
             ) else { continue }
+            // /Library 下的组件不一定以 .app 命名（macFUSE 是 macfuse.fs），
+            // 因此对 /Library 放行所有顶层项，其余目录仍只取 .app。
+            let onlyAppBundles = dir.path != "/Library"
+            allApps += apps.filter { !onlyAppBundles || $0.pathExtension == "app" }
+        }
 
-            for app in apps where app.pathExtension == "app" {
-                progress("正在读取 \(app.lastPathComponent)…")
-                await Task.yield()
-                // 递归整个 app 包，收集所有 Info.plist。
-                // 这里同步收集完再 await —— FileManager.enumerator 的迭代器
-                // 在异步上下文里不安全（Swift 6 会报错），因此先取出结果集。
-                for bid in bundleIDs(insideApp: app) { known.insert(bid) }
+        // 并行处理。
+        //
+        // 每个 app 都要起一个 `codesign` 子进程读 entitlements。串行做实测
+        // 2.7 秒（仅 /Applications 29 个），并行 0.2 秒。这个差距在真实 app
+        // 里会被放大 —— `Process` 会和主线程 runloop 抢资源，UI 版扫描曾
+        // 慢到 60 秒以上，看着像卡死。
+        var known = Set<String>()
+        await withTaskGroup(of: (Set<String>, String).self) { group in
+            for app in allApps {
+                group.addTask {
+                    // 递归整个 app 包，收集所有 Info.plist。
+                    // FileManager.enumerator 的迭代器在异步上下文里不安全
+                    // （Swift 6 会报错），所以 bundleIDs 内部同步取完结果集。
+                    var ids = Set(bundleIDs(insideApp: app))
+                    // 同时收集该应用在 entitlements 里声明的 group container。
+                    // 这是**权威来源** —— 比靠 id 猜测可靠得多：
+                    //   Shortcuts 声明 group.is.workflow.{my.app,shortcuts}
+                    //   Docker   声明 group.com.docker
+                    // 两者的容器名都不在各自 Info.plist 里，纯扫 plist 会误判。
+                    ids.formUnion(declaredGroupContainers(app))
+                    return (ids, app.lastPathComponent)
+                }
+            }
+            for await (ids, name) in group {
+                known.formUnion(ids)
+                progress("正在读取 \(name)…")
             }
         }
         return known
@@ -163,6 +245,38 @@ final class OrphanScanner: ObservableObject {
         var out: [String] = []
         for case let f as URL in walker where f.lastPathComponent == "Info.plist" {
             if let bid = bundleID(fromPlist: f) { out.append(bid) }
+        }
+        return out
+    }
+
+    /// 读取一个应用在 entitlements 里声明的 group container 标识。
+    ///
+    /// 这是判断「某个 Group Container 归谁」最可靠的依据。相比遍历
+    /// Info.plist 猜 bundle id，它能拿到完全不体现在 plist 里的名字。
+    /// 用 `codesign -d --entitlements` 读取，实测全量耗时 < 1 秒。
+    nonisolated static func declaredGroupContainers(_ app: URL) -> [String] {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        proc.arguments = ["-d", "--entitlements", "-", app.path]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()   // codesign 把 entitlements 写到 stderr
+        do { try proc.run() } catch { return [] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard let text = String(data: data, encoding: .utf8) else { return [] }
+
+        // 从输出里挑出形如 group.* 的标识。用正则而不是 plist 解析：
+        // codesign 的输出是多段拼接的文本，直接当 plist 解析并不总是成立。
+        var out: [String] = []
+        let pattern = try? NSRegularExpression(pattern: "group\\.[A-Za-z0-9._-]+")
+        let range = NSRange(text.startIndex..., in: text)
+        for m in pattern?.matches(in: text, range: range) ?? [] {
+            if let r = Range(m.range, in: text) {
+                let g = String(text[r]).lowercased()
+                // 顺手剥掉沙盒 team-id 前缀，保证与容器目录名可比
+                out.append(stripTeamPrefix(g))
+            }
         }
         return out
     }
@@ -317,12 +431,14 @@ final class OrphanScanner: ObservableObject {
                 // 属于已安装应用 → 不是孤儿
                 if isKnown(bid, in: known) { continue }
 
-                // 最近仍在被读写的条目一律跳过。
-                // 这是最后的兜底：有些已安装应用并不在自己的 Info.plist 里
-                // 声明它使用的 Group Container（实测 Docker 就是如此，
-                // `group.com.docker` 在 Docker.app 内部查不到），
-                // 纯靠 id 匹配会误报。用「最近访问过」作为保守信号。
-                if let recent = lastUsed(e), recent > Date().addingTimeInterval(-90 * 24 * 3600) {
+                // 最近仍在被读写的条目跳过，作为最后一道保守兜底。
+                //
+                // 窗口从 90 天收紧到 30 天：原先定 90 天，是因为「应用装了但
+                // 没声明所用容器」只能靠时间兜底（Docker 的 group.com.docker
+                // 就是这种）。现在 entitlements 直接给出了归属，时间规则不必
+                // 再承担那么重的责任 —— 代价是漏报，实测 marvis 有 2.1 GB
+                // 残留卡在 61 天，被旧的 90 天窗口整个跳过了。
+                if let recent = lastUsed(e), recent > Date().addingTimeInterval(-30 * 24 * 3600) {
                     continue
                 }
 

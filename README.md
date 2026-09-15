@@ -33,7 +33,7 @@ open build/MacCleaner.app
 | 存储 | 重复文件 | 内容哈希查找重复副本 |
 | 系统 | 内存 | 实时内存观测 |
 | 工具 | 应用卸载 | 应用本体 + 残留清理 |
-| 工具 | 卸载残余 | 已删除应用留下的无主文件 |
+| 工具 | 卸载残余 | 已删除应用留下的无主文件（本机 3.02 GB）|
 | 工具 | 清理历史 | 累计释放量与趋势 |
 | 工具 | 磁盘健康 | 文件系统 / APFS / SMART |
 
@@ -100,24 +100,49 @@ open build/MacCleaner.app
 
 上一节处理「应用还在」，这一节处理「应用已经删了，只留下一堆无主文件」。
 
-判定一个文件是否无主，比看上去难。**关键在于要把已安装应用内部的全部标识都读出来**：
+判定一个文件是否无主，比看上去难。一共用了三个信号，按可靠性排序：
+
+**1. 应用内部的全量标识（递归 Info.plist）**
 
 | 做法 | 本机读到的标识数 |
 |---|---|
 | 只读 `/Applications/*.app` 的顶层 `Info.plist` | 29 |
-| 递归每个 `.app` 内部的**所有** `Info.plist` | **777** |
+| 递归每个 `.app` 内部的**所有** `Info.plist` | 937 |
 
-差的那 748 个会造成严重误判。实测例子：`Docker.app` 的标识是 `com.docker.docker`，
-但它内部嵌套的 Helper 用的是 `com.electron.dockerdesktop`。
-只比对顶层标识，就会把 `~/Library/Preferences/com.electron.dockerdesktop.plist`
-当成孤儿推荐删除 —— 而它属于一个正在使用的应用。
+实测例子：`Docker.app` 的标识是 `com.docker.docker`，但它内部嵌套的 Helper
+用的是 `com.electron.dockerdesktop`。只比对顶层标识，就会把
+`~/Library/Preferences/com.electron.dockerdesktop.plist` 当成孤儿推荐删除 ——
+而它属于一个正在使用的应用。
 
-再加上两条保守规则：
+**2. entitlements 里声明的 group container（权威来源）**
+
+有些容器名**根本不在任何 Info.plist 里**，只能从 entitlements 拿：
+
+| 应用 | 声明的容器 |
+|---|---|
+| Shortcuts | `group.is.workflow.my.app`、`group.is.workflow.shortcuts` |
+| Docker | `group.com.docker` |
+
+靠 id 猜会误报（早期版本就把系统快捷指令的两个容器当成了孤儿），
+靠「90 天未访问」兜底则会漏。用 `codesign -d --entitlements` 直接读，
+全量耗时 < 1 秒。
+
+**3. 覆盖非标准安装位置**
+
+macFUSE 把 fsmodule 装在
+`/Library/Filesystems/macfuse.fs/Contents/Resources/...appex`，
+不扫 `/Library` 就会把它的 Application Scripts 误判成孤儿。
+`/Library` 只有 ~125 个 `Info.plist`，代价可接受。
+
+最终本机已知标识 **1389 个**（`/Applications` + `~/Applications` +
+`/System/Applications` + `/System/Library/CoreServices` + `/Library`）。
+
+另加两条保守规则：
 
 - **沙盒 team-id 前缀要剥离**：`5ZSL2CJU2T.com.dingtalk.mac` 要能匹配上 `com.dingtalk.mac`
-- **90 天内被访问过的一律跳过**：有些应用不在自己的配置里声明所用容器
-  （实测 Docker 就是如此，`group.com.docker` 在 `Docker.app` 内部查不到），
-  纯靠标识匹配会误报，用「最近是否动过」兜底
+- **30 天内被访问过的一律跳过**：最后一道兜底。窗口从 90 天收紧到 30 天，
+  因为 entitlements 已经承担了主要判定责任 —— 90 天会漏掉
+  `com.tencent.mac.marvis` 那 2.31 GB（卡在 61 天）
 
 Apple 系统组件（任何位置含 `com.apple.`）永不列出。结果按厂商聚类，
 每项都标出所属 `~/Library` 子目录、体积和最后修改时间。
@@ -272,7 +297,7 @@ free 常年很低是正常现象。只统计 free 会严重低估可用量。
 | `AppInventoryTests` | 真实环境验证：枚举应用、排除系统应用、残留命名与 bundle id 匹配、本体/残留的风险等级与类别 |
 | `CleanupHistoryTests` | 持久化往返、0 释放量不记录、500 条上限截断、每日补零、按类别汇总 |
 | `DiskHealthProbeTests` | 真实 `diskutil` 输出解析：卷信息、APFS 容器、SMART 可读性 |
-| `OrphanScannerTests` | 标识形态识别（正例/反例）、后缀剥离、team-id 前缀剥离、Apple 组件排除、双向前缀匹配、真实扫描 + 真实删除 |
+| `OrphanScannerTests` | 标识形态识别（正例/反例）、后缀剥离、team-id 前缀剥离、Apple 组件排除、双向前缀匹配、**entitlements group container 提取**、非标准安装位置、真实扫描 + 真实删除 |
 
 `SafetyGuardTests` 里最关键的断言是**「安全倒退检查」**：它把当前实现与
 `git HEAD` 里的旧实现逐条对比，任何「旧版拒绝、新版允许」的路径都会被列出并判失败。

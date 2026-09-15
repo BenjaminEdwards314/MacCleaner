@@ -49,6 +49,35 @@ import Foundation
     expect(OrphanScanner.isKnown("com.foo.app.helper", in: known), "★子模块不被当成孤儿")
     expect(!OrphanScanner.isKnown("com.tencent.yuanbao", in: known), "真孤儿不匹配")
 
+    print("\n=== 5b. entitlements 声明的 group container（修误报的关键）===")
+    // 这些 group container 的名字不在任何 Info.plist 里，只能从 entitlements 拿到。
+    // 早期版本靠「90 天未访问」兜底，会漏；靠 id 猜，会误报。
+    let shortcuts = URL(fileURLWithPath: "/System/Applications/Shortcuts.app")
+    let scGroups = OrphanScanner.declaredGroupContainers(shortcuts)
+    expect(scGroups.contains("group.is.workflow.shortcuts"),
+           "★Shortcuts 声明了 group.is.workflow.shortcuts（否则会误报成孤儿）")
+    expect(scGroups.contains("group.is.workflow.my.app"),
+           "★Shortcuts 声明了 group.is.workflow.my.app")
+    let docker = URL(fileURLWithPath: "/Applications/Docker.app")
+    if FileManager.default.fileExists(atPath: docker.path) {
+        expect(OrphanScanner.declaredGroupContainers(docker).contains("group.com.docker"),
+               "★Docker 声明了 group.com.docker（否则会误报成孤儿）")
+    }
+
+    print("\n=== 5c. 非 /Applications 位置的应用也要扫到 ===")
+    // macFUSE 把 fsmodule 装在 /Library/Filesystems/.../Resources 下，
+    // 不扫 /Library 就会把它的 Application Scripts 误判成孤儿。
+    let macfuse = URL(fileURLWithPath:
+        "/Library/Filesystems/macfuse.fs/Contents/Resources/macfuse.app"
+        + "/Contents/Extensions/io.macfuse.app.fsmodule.macfuse-local.appex")
+    if FileManager.default.fileExists(atPath: macfuse.path) {
+        expect(OrphanScanner.bundleIDs(insideApp: macfuse)
+                .contains("io.macfuse.app.fsmodule.macfuse-local"),
+               "★macFUSE 组件标识被读到（否则 Application Scripts 会误报）")
+    } else {
+        print("⏭  本机未装 macFUSE，跳过")
+    }
+
     print("\n=== 6. 端到端：真实扫描 → 真实删除 ===")
     let fake = URL(fileURLWithPath: NSHomeDirectory()
         + "/Library/Caches/com.maccleaner.orphantest.\(UUID().uuidString.prefix(8))")
