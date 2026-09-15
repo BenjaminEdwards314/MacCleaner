@@ -17,10 +17,12 @@ final class CleanupEngine: ObservableObject {
     /// - Parameters:
     ///   - items: 要清理的条目
     ///   - permanent: true 时直接删除（仅用于清空废纸篓），false 时移入废纸篓
+    ///   - grant: 额外授权。清理重复文件/应用卸载时传入，普通缓存清理传 nil。
     ///   - progress: 进度回调 (已完成数, 总数, 当前文件名)
     func clean(
         items: [CleanupItem],
         permanent: Bool,
+        grant: SafetyGuard.Grant? = nil,
         progress: @escaping (Int, Int, String) -> Void
     ) async -> Outcome {
         var outcome = Outcome()
@@ -31,7 +33,7 @@ final class CleanupEngine: ObservableObject {
 
             // 二次安全校验：即使 UI 出错，这里也会拦下
             do {
-                try SafetyGuard.validate(item.url)
+                try SafetyGuard.validate(item.url, grant: grant)
             } catch {
                 outcome.failures.append((item.url, error.localizedDescription))
                 continue

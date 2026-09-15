@@ -36,6 +36,9 @@ enum CleanupCategory: String, Codable, CaseIterable, Identifiable {
     case appSupport       // 应用支持数据
     case largeFiles       // 大文件
     case tempFiles        // 临时文件
+    case duplicates       // 重复文件（内容完全一致）
+    case appResidue       // 应用卸载残留
+    case appBundle        // 应用本体
 
     var id: String { rawValue }
 
@@ -52,6 +55,9 @@ enum CleanupCategory: String, Codable, CaseIterable, Identifiable {
         case .appSupport: return "应用支持"
         case .largeFiles: return "大文件"
         case .tempFiles: return "临时文件"
+        case .duplicates: return "重复文件"
+        case .appResidue: return "应用残留"
+        case .appBundle: return "应用本体"
         }
     }
 
@@ -68,6 +74,9 @@ enum CleanupCategory: String, Codable, CaseIterable, Identifiable {
         case .appSupport: return "square.stack.3d.up"
         case .largeFiles: return "doc.zipper"
         case .tempFiles: return "clock.arrow.circlepath"
+        case .duplicates: return "doc.on.doc"
+        case .appResidue: return "shippingbox"
+        case .appBundle: return "app.dashed"
         }
     }
 }

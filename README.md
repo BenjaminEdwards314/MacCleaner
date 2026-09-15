@@ -2,6 +2,8 @@
 
 原生 SwiftUI 应用。可视化展示磁盘占用，安全清理缓存与垃圾文件。
 
+**七个功能**：清理 · 空间 · 重复文件 · 内存 · 应用卸载 · 清理历史 · 磁盘健康
+
 ![平台](https://img.shields.io/badge/macOS-15%2B-blue) ![Swift](https://img.shields.io/badge/Swift-6.1-orange)
 
 ## 快速开始
@@ -12,14 +14,29 @@ cd ~/Documents/software/MacCleaner
 open build/MacCleaner.app
 ```
 
-构建产物：`build/MacCleaner.app`（约 1.8 MB，无外部依赖）
+构建产物：`build/MacCleaner.app`（约 3.1 MB，无外部依赖）
 
 需要可分发的安装包时用 `./package.sh` —— 它会编译 arm64 + x86_64
 并合并为通用二进制，再打成 `build/MacCleaner-1.0.dmg`。
 
+跑测试：`./run_tests.sh`（5 个测试文件，覆盖安全护栏、重复文件哈希、
+应用残留匹配、历史持久化、磁盘信息解析）。
+
 ## 界面
 
-窗口分三块，顶栏用分段控件切换：
+窗口是**侧边栏导航**，7 个功能分三组：
+
+| 分组 | 功能 | 说明 |
+|---|---|---|
+| 存储 | 清理 | 扫描缓存、日志、开发残留 |
+| 存储 | 空间 | 矩形树图 + 目录钻取 |
+| 存储 | 重复文件 | 内容哈希查找重复副本 |
+| 系统 | 内存 | 实时内存观测 |
+| 工具 | 应用卸载 | 应用本体 + 残留清理 |
+| 工具 | 清理历史 | 累计释放量与趋势 |
+| 工具 | 磁盘健康 | 文件系统 / APFS / SMART |
+
+侧边栏底部常驻显示当前磁盘占用，随时有个全局参照。
 
 ### 清理
 
@@ -38,6 +55,25 @@ open build/MacCleaner.app
 两阶段加载：先毫秒级列出目录骨架，再逐个回填体积。实测
 `~/Library/Application Support` 完整统计要 24 秒，但 0.9 秒内就能看到前 20 项的真实体积。
 
+### 重复文件
+
+按**内容**而非文件名判断重复。三阶段筛选，代价从低到高逐层淘汰：
+
+1. **按体积分组** — 只读元数据，体积唯一的文件（占绝大多数）直接排除
+2. **头部指纹** — 只读前 4 KB 做 SHA256，淘汰同尺寸但内容不同的
+3. **完整哈希** — 只有前两阶段都相同的才做整文件 SHA256（分块流式，不占内存）
+
+实际需要完整哈希的文件通常只占极小比例，所以扫描很快。
+
+**跳过**：小于 1 MB 的文件、符号链接、以及**硬链接**
+（硬链接指向同一份数据，把它算成「重复」会诱导用户删掉「一个副本」，实际删哪个都一样）。
+
+扫描范围可自由勾选（默认下载 + 文档 + 桌面）。清理规则是显式的：
+
+- **默认一个都不勾选** —— 「重复」是内容判断，但你可能刻意在不同位置保留同一份文件
+- **每组必留一份** —— 批量勾选按钮只勾选「除保留项之外的副本」，不存在把一组删空的路径
+- 批量策略可选「保留最早 / 保留最新 / 保留路径最短」
+
 ### 内存
 
 实时内存观测面板：
@@ -47,7 +83,45 @@ open build/MacCleaner.app
 3. **内存占用最高的进程** — 降序排列，每 10 秒刷新
 4. **交换空间** — 使用量（如有）
 
-顶栏两个扫描按钮：
+### 应用卸载
+
+把 `.app` 拖进废纸篓只会删掉程序本体，缓存在 `~/Library` 里的数据会永久留下。
+这一页按 bundle identifier 找出残留：
+
+1. **左侧应用列表** — 显示每个应用的本体体积与残留体积
+2. **右侧明细** — 应用本体单独一块，残留按 `~/Library` 子目录分组，逐项可勾选
+3. 三个动作：「清理勾选的残留」（保留应用）、「仅卸载本体」、「彻底卸载」
+
+只做**目录列举 + 名称匹配**（残留命名约定很固定：等于 bundle id 或以 `<bundle id>.` 开头），
+不递归遍历，所以很快。系统自带应用（`com.apple.*`）不列出。
+
+### 清理历史
+
+每次清理后记录一条：时间、项数、释放量、类别明细、失败数。
+
+1. **汇总卡片** — 累计释放 / 清理次数 / 清理项目 / 最近一次
+2. **每日柱状图** — 近 7 / 30 / 90 天可切换
+3. **按类别累计** — 横向条形，看出哪类最占空间
+4. **最近记录** — 最近 20 条明细
+
+历史存在 `~/Library/Application Support/MacCleaner/history.json`，
+**只记录体积，不记录任何文件路径** —— 路径对趋势没有价值，却会让一个本地历史文件变成隐私存档。
+上限 500 条，可在界面上一键清空。
+
+### 磁盘健康
+
+1. **启动卷** — 卷名、文件系统、挂载点、设备节点、介质类型、加密、只读、容量占比
+2. **APFS 容器** — 每个容器的容量 / 已用 / 未分配，卷数与快照数
+3. **本地快照** — Time Machine 本地快照列表
+4. **SMART 状态** — 磁盘自检结果
+
+数据来自 `diskutil` 与 `tmutil`，全部只读。
+
+> **关于缺失字段**：Apple Silicon 内置盘的多数 SMART 细项（通电时间、写入量、坏块）
+> **不可读**，`diskutil` 只返回一个总体状态；外接 USB 盘通常连总体状态也读不到。
+> 所以这些字段全部可选，读不到时界面显示「不可读」而**不会编造数值**。
+
+### 清理页的扫描按钮
 
 | 按钮 | 扫描内容 | 耗时 |
 |---|---|---|
@@ -120,27 +194,71 @@ free 常年很低是正常现象。只统计 free 会严重低估可用量。
 删除前统一执行 `standardizedFileURL.resolvingSymlinksInPath()`，所以
 `~/Library/Caches/../Documents` 会被解析成 `~/Documents` 并被黑名单拦截。
 
-同时要求路径至少 4 层深度，`/System/Library` 这类太浅的路径直接拒绝。
+无授权路径还要求至少 4 层深度，`~/.Trash`、`~/Library/Caches` 这类容器目录本身会被拒绝。
 
-### 4. 移废纸篓而非直接删除
+### 4. 受限放行（`Grant`）
+
+有两个功能天然不可能落在缓存白名单里：**重复文件**的副本在下载/文档/桌面，
+**应用卸载**的本体在 `/Applications`。把这些目录直接加进白名单会让上面所有保证失效。
+
+所以改为**显式授权**：调用方必须传入一个 `Grant`，它的取值只由已完成验证的地方构造：
+
+| Grant | 由谁产出 | 额外要求 |
+|---|---|---|
+| `.verifiedDuplicate` | `DuplicateFinder` | SHA256 确认同组至少还有一份，且路径在 `~/Downloads`、`~/Documents`、`~/Desktop`、`~/Pictures`、`~/Movies`、`~/Music` 内部 |
+| `.appUninstall` | `AppInventory` | 路径是 `/Applications` 或 `~/Applications` 下某 `.app` 的直接子项，或位于已登记的 10 个 `~/Library` 残留目录内部 |
+
+**授权只放宽「白名单」这一项**，其余检查全部照旧生效：
+系统目录（`/System`、`/usr`、`/Library` …）任何授权都不放行，
+受保护文件名（`.ssh`、`Keychains` …）优先级高于授权，
+`~/Library/Containers` 与 `Group Containers` **未开放**（沙盒数据与系统组件混放，误删风险高）。
+
+删除时仍会二次校验，即使界面出错也拦得住。
+
+### 5. 移废纸篓而非直接删除
 
 所有清理都通过 `NSWorkspace` 的 `trashItem` 移入废纸篓，**可随时恢复**。
 唯一的例外是废纸篓自身的内容（那才叫真正清空）。
 
-### 已验证
+判断「是否在废纸篓内」用标准化后的路径前缀比较，而不是
+`path.contains("/.Trash/")` —— 后者会让 `~/foo/.Trash/bar` 这类伪装路径命中，
+造成绕过废纸篓的永久删除。
 
-安全护栏经过 14 个用例测试，全部通过：
+### 测试
+
+测试是**独立可执行文件**，不是 XCTest 套件（项目用 `swiftc` 手工编译，没有 SwiftPM）。
+每个测试自带最小依赖桩，单独编译运行：
+
+```bash
+./run_tests.sh              # 跑全部
+./run_tests.sh SafetyGuard  # 只跑名字匹配的
+```
+
+5 个测试文件，覆盖：
+
+| 测试 | 覆盖内容 |
+|---|---|
+| `SafetyGuardTests` | **安全倒退检查**：60 条路径对比新旧实现，确认无授权时行为完全一致；18 条授权边界；9 条 `isInsideTrash` 用例 |
+| `DuplicateFinderTests` | 真实文件验证：同内容检出、同尺寸不同内容排除、前 4 KB 相同整体不同排除、硬链接排除、小于 1 MB 跳过、选择策略 |
+| `AppInventoryTests` | 真实环境验证：枚举应用、排除系统应用、残留命名与 bundle id 匹配、本体/残留的风险等级与类别 |
+| `CleanupHistoryTests` | 持久化往返、0 释放量不记录、500 条上限截断、每日补零、按类别汇总 |
+| `DiskHealthProbeTests` | 真实 `diskutil` 输出解析：卷信息、APFS 容器、SMART 可读性 |
+
+`SafetyGuardTests` 里最关键的断言是**「安全倒退检查」**：它把当前实现与
+`git HEAD` 里的旧实现逐条对比，任何「旧版拒绝、新版允许」的路径都会被列出并判失败。
+这次改造过程中它抓到过 3 个真实缺陷：
+
+1. `/Applications/WeChat.app` 只有 2 层路径，被旧的 `depth >= 4` 规则误拒 —— 卸载功能会完全失效
+2. `.../Codex/Crashpad/pending` 这类白名单条目本身是要删的目标，改成「只允许子路径」后会被静默拒绝
+3. `~/.Trash` 容器目录本身变成了可删 —— 深度校验被改写后的安全倒退
+
+### 已验证的实测结果
 
 ```
-✅ 允许      ~/Library/Caches/Google
-✅ 拒绝:受保护 ~/Documents/存档
-✅ 拒绝:受保护 ~/Desktop/产品文档
-✅ 拒绝:受保护 ~/Library/Keychains/login.keychain-db
-✅ 拒绝:受保护 ~/Library/Containers/com.tencent.xinWeChat
-✅ 允许      ~/Library/Application Support/Codex/Crashpad/pending
-✅ 拒绝:受保护 ~/Library/Application Support/Codex/Default
-✅ 拒绝:主目录 ~
-✅ 拒绝:白名单外 ~/Library/Caches/../Documents    ← 路径穿越
+应用卸载    27 个应用、89 项残留，残留命名与 bundle id 100% 匹配
+重复文件    同内容检出、硬链接/同尺寸异内容/前4KB同但整体不同 —— 均正确排除
+清理历史    持久化往返、上限截断、补零  —— 全部通过
+磁盘健康    APFS 卷/容器/SMART 均解析成功（SMART = Verified）
 ```
 
 ## 风险分级
@@ -161,33 +279,48 @@ free 常年很低是正常现象。只统计 free 会严重低估可用量。
 MacCleaner/
 ├── build.sh                              # 构建脚本 → build/MacCleaner.app
 ├── package.sh                            # 打包脚本 → build/MacCleaner-1.0.dmg（通用二进制）
+├── run_tests.sh                          # 测试运行器（独立可执行测试，非 XCTest）
 ├── make_icon.py                          # 生成图标（Pillow 手绘，非必需）
 ├── demo.html                             # 界面演示网页，独立于应用本体
 ├── Resources/
 │   ├── MacCleaner.icns                   # 构建时被打包进 .app 的图标
 │   └── icon-preview.png                  # 仅供预览，不参与构建
+├── Tests/                                # 5 个独立测试（各自带最小依赖桩）
+│   ├── SafetyGuardTests.swift            # 安全倒退检查 + 授权边界 + isInsideTrash
+│   ├── DuplicateFinderTests.swift        # 真实文件验证三阶段哈希
+│   ├── AppInventoryTests.swift           # 真实环境验证应用枚举与残留匹配
+│   ├── CleanupHistoryTests.swift         # 持久化往返、上限截断
+│   └── DiskHealthProbeTests.swift        # diskutil 输出解析
 ├── Sources/MacCleaner/
 │   ├── Models/
 │   │   ├── Models.swift                  # 数据结构、风险分级、格式化
-│   │   └── MemoryStats.swift             # 内存采样模型、压力等级
+│   │   ├── MemoryStats.swift             # 内存采样模型、压力等级
+│   │   └── CleanupHistory.swift          # 清理历史记录与持久化
 │   ├── Scanner/
 │   │   ├── StorageScanner.swift          # 清理视图扫描引擎（垃圾位置知识库）
 │   │   ├── DiskScanner.swift             # 空间视图节点模型（按需加载一层）
-│   │   └── DiskNavigator.swift           # 空间视图状态机（两阶段加载）
+│   │   ├── DiskNavigator.swift           # 空间视图状态机（两阶段加载）
+│   │   ├── DuplicateFinder.swift         # 重复文件三阶段哈希引擎
+│   │   └── AppInventory.swift            # 应用枚举与残留匹配
 │   ├── Services/
-│   │   ├── SafetyGuard.swift             # 安全护栏（白/黑名单、路径穿越防护）
-│   │   ├── CleanupEngine.swift           # 清理执行（移废纸篓）
+│   │   ├── SafetyGuard.swift             # 安全护栏（白/黑名单、受限放行、路径穿越防护）
+│   │   ├── CleanupEngine.swift           # 清理执行（移废纸篓，支持 Grant）
 │   │   ├── SizeCalculator.swift          # 目录体积计算（流式 + 并行）
-│   │   └── MemoryProbe.swift             # 内存采集（vm_stat / ps / swap）
+│   │   ├── MemoryProbe.swift             # 内存采集（vm_stat / ps / swap）
+│   │   └── DiskHealthProbe.swift         # 磁盘健康采集（diskutil / tmutil）
 │   └── UI/
-│       ├── ContentView.swift             # 程序入口 + 主窗口 + 三个 tab
+│       ├── ContentView.swift             # 程序入口 + 侧边栏导航
 │       ├── DiskOverviewView.swift        # 磁盘环形图
 │       ├── CategoryDonutView.swift       # 类别甜甜圈
 │       ├── DetailListView.swift          # 明细列表
 │       ├── DiskSpaceView.swift           # 空间视图（面包屑 + 列表/树图切换）
 │       ├── TreemapView.swift             # 矩形树图
 │       ├── TreemapLayout.swift           # 树图布局算法
-│       └── MemoryView.swift              # 内存视图
+│       ├── MemoryView.swift              # 内存视图
+│       ├── DuplicateView.swift           # 重复文件视图
+│       ├── UninstallerView.swift         # 应用卸载视图（左列表 + 右明细）
+│       ├── HistoryView.swift             # 清理历史与趋势图
+│       └── DiskHealthView.swift          # 磁盘健康视图
 └── build/                                # 构建产物（可随时删除）
 ```
 
@@ -229,6 +362,14 @@ Symbol not found: _$s7llbuild15ExternalCommandPAAE19depedencyDataFormat...
 - **部分系统目录需要完全磁盘访问权限**（如 `~/Library/Containers`）。
   未授权时会静默跳过，不会报错。可在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中授权。
 - **Ad-hoc 签名**。首次打开如提示「无法验证开发者」，右键 → 打开 即可。
+- **应用卸载不覆盖沙盒数据**。`~/Library/Containers` 与 `Group Containers`
+  未开放清理 —— 该目录同时存放系统组件数据，误删风险高于收益。界面已明确标注这一限制。
+- **重复文件只做精确匹配**。SHA256 相同才算重复，所以「同一张图的不同压缩质量」
+  或「同一文档的不同版本」不会被识别 —— 这是刻意取舍，模糊匹配的误报代价太高。
+- **不清理系统级位置**。`/Library`、`/System`、`/usr` 等一律不碰，所以本工具
+  只能回收用户空间。这与「不动系统文件」的设计目标一致，但意味着清理量有上限。
+- **磁盘健康的 SMART 细项多数不可读**。Apple Silicon 内置盘只提供总体状态；
+  外接盘可能连总体状态也没有。界面显示「不可读」而非编造数值。
 
 ## 许可
 

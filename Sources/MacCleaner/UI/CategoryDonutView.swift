@@ -92,6 +92,11 @@ struct CategoryDonutView: View {
         case .appSupport: return .indigo
         case .largeFiles: return .pink
         case .tempFiles: return .teal
+        // 这三个类别不出现在清理页的环形图里（它们来自重复文件/卸载视图），
+        // 但枚举是共享的，颜色必须给全，否则 switch 不穷尽。
+        case .duplicates: return .mint
+        case .appResidue: return .purple
+        case .appBundle: return .red
         }
     }
 }
