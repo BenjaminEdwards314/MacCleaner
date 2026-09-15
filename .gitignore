@@ -1,6 +1,9 @@
 # 构建产物（由 build.sh / package.sh 生成，体积大且可重建）
 build/
 
+# 图标中间产物（由 make_icon.py 生成，.icns 才是入库的成品）
+Resources/MacCleaner.iconset/
+
 # macOS 元数据
 .DS_Store
 

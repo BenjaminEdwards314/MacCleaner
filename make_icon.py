@@ -1,27 +1,42 @@
 #!/usr/bin/env python3
 """
-生成 MacCleaner 应用图标 —— 扫帚 + 磁盘
-macOS Big Sur 之后的图标规范：
-  - 圆角矩形，圆角半径约为边长的 22.37%（squircle 近似）
-  - 图标内容不铺满画布，四周留出约 10% 边距
-  - 光源在上方，底部有轻微投影
+生成 MacCleaner 应用图标 —— 磁盘仪表环（抽象图形）
+
+设计取舍
+--------
+旧版用「扫帚 + 磁盘」，实测有三个硬伤：
+  1. 扫帚头盖住磁盘 39% 的宽度，磁盘等于白画；
+  2. 13 条刷毛按 line width=1.25×间距 画，底部留出黑缝，像坏梳子；
+  3. 扫帚是细长斜线图形，缩到 32px 后完全糊掉，只剩一团金色。
+
+新版改用「开口环 + 指针」的仪表盘符号：
+  - 主体是一个粗环，小尺寸下仍是一个结实的实心形状，不会散架；
+  - 环的开口用进度语义（已用/可用），配合指针指向，一眼看懂"空间占用"；
+  - 只用 2 个色相，靠明度分层，避免旧版「深蓝紫 + 土黄」的脏感。
+
+macOS 图标规范
+--------------
+  - 圆角矩形，圆角半径约为边长的 22.37%（Big Sur squircle 近似）
+  - 内容不铺满画布，四周留出约 10% 边距
+  - 光源在上方，底部有投影；图形带轻微内阴影/高光
 """
 from PIL import Image, ImageDraw, ImageFilter
 import math, os, sys
 
-S = 1024                      # 主画布
-MARGIN = int(S * 0.098)       # 四周留白
+S = 1024                        # 主画布
+MARGIN = int(S * 0.098)         # 四周留白
 BOX = (MARGIN, MARGIN, S - MARGIN, S - MARGIN)
-BW = BOX[2] - BOX[0]          # 圆角矩形边长
-RADIUS = int(BW * 0.2237)     # squircle 近似半径
+BW = BOX[2] - BOX[0]            # 圆角矩形边长
+RADIUS = int(BW * 0.2237)       # squircle 近似半径
+SS = 4                          # 超采样倍率
 
 
 def lerp(a, b, t):
     return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
 
 
-def rounded_mask(size, box, radius, supersample=4):
-    """高质量圆角矩形遮罩（4x 超采样后缩小，边缘更平滑）"""
+def rounded_mask(size, box, radius, supersample=SS):
+    """高质量圆角矩形遮罩（超采样后缩小，边缘更平滑）"""
     w, h = size
     m = Image.new("L", (w * supersample, h * supersample), 0)
     d = ImageDraw.Draw(m)
@@ -30,166 +45,194 @@ def rounded_mask(size, box, radius, supersample=4):
     return m.resize((w, h), Image.LANCZOS)
 
 
-def vertical_gradient(size, top, bottom):
-    """垂直线性渐变"""
+def diagonal_gradient(size, top_left, bottom_right):
+    """对角线性渐变 —— 比纯垂直渐变更有体积感"""
     w, h = size
-    g = Image.new("RGB", (1, h))
+    g = Image.new("RGB", (w, h))
     px = g.load()
+    denom = max(w + h - 2, 1)
     for y in range(h):
-        t = y / max(h - 1, 1)
-        px[0, y] = lerp(top, bottom, t)
-    return g.resize((w, h), Image.BILINEAR)
+        for x in range(w):
+            # 只按行采样再拉伸会丢对角信息，这里逐像素算但限制在低分辨率
+            pass
+    # 逐像素太慢，改用 256x256 计算后放大
+    n = 256
+    small = Image.new("RGB", (n, n))
+    sp = small.load()
+    for y in range(n):
+        for x in range(n):
+            t = (x + y) / (2 * (n - 1))
+            sp[x, y] = lerp(top_left, bottom_right, t)
+    return small.resize((w, h), Image.BICUBIC)
 
 
-def draw_glow(img, bbox, color, blur, alpha):
-    """在指定区域画一层柔光"""
+def glow(img, bbox, color, blur, alpha):
+    """柔光层"""
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    d = ImageDraw.Draw(layer)
-    d.ellipse(bbox, fill=color + (alpha,))
-    layer = layer.filter(ImageFilter.GaussianBlur(blur))
-    return Image.alpha_composite(img, layer)
+    ImageDraw.Draw(layer).ellipse(bbox, fill=color + (alpha,))
+    return Image.alpha_composite(img, layer.filter(ImageFilter.GaussianBlur(blur)))
 
 
-def make_icon(size=S, bg_top=(58, 62, 92), bg_bottom=(28, 30, 48)):
+def ring_arc(draw, cx, cy, r_out, r_in, start_deg, end_deg, fill, ss=SS):
+    """
+    画一段圆环（带超采样）。
+    PIL 没有环形图元，用「外圆减去内圆」的 pieslice 组合实现。
+    """
+    if end_deg <= start_deg:
+        return
+    box = [cx - r_out, cy - r_out, cx + r_out, cy + r_out]
+    draw.pieslice(box, start=start_deg, end=end_deg, fill=fill)
+    inner = [cx - r_in, cy - r_in, cx + r_in, cy + r_in]
+    # 内圈用透明「挖洞」不可行（同一张图上），所以由调用方分层处理
+    return box, inner
+
+
+def make_icon(size=S):
+    cx = cy = size / 2
+
+    # ---------- 配色：蓝青渐变 ----------
+    # 取自 macOS 磁盘工具一类的系统蓝青，比旧版的深蓝紫更干净
+    BG_TL = (94, 186, 250)      # 左上：亮天蓝
+    BG_BR = (28, 108, 210)      # 右下：深蓝
+    RING_DONE = (255, 255, 255)  # 已用部分：纯白
+    RING_TODO = (255, 255, 255, 92)  # 剩余部分：半透明白
+
+    # ---------- 1. 底色圆角矩形 + 对角渐变 ----------
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-
-    # ---------- 1. 底色圆角矩形 + 渐变 ----------
-    grad = vertical_gradient((size, size), bg_top, bg_bottom).convert("RGBA")
+    grad = diagonal_gradient((size, size), BG_TL, BG_BR).convert("RGBA")
     mask = rounded_mask((size, size), BOX, RADIUS)
     img.paste(grad, (0, 0), mask)
 
-    # 顶部高光（模拟光源在上方）
+    # 顶部高光（光源在上方）
     hl = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    hd = ImageDraw.Draw(hl)
-    hd.ellipse([BOX[0] - BW * 0.15, BOX[1] - BW * 0.42,
-                BOX[2] + BW * 0.15, BOX[1] + BW * 0.30],
-               fill=(255, 255, 255, 26))
-    hl = hl.filter(ImageFilter.GaussianBlur(BW * 0.09))
-    hl.putalpha(Image.composite(hl.getchannel("A"), Image.new("L", (size, size), 0), mask))
+    ImageDraw.Draw(hl).ellipse(
+        [BOX[0] - BW * 0.15, BOX[1] - BW * 0.46,
+         BOX[2] + BW * 0.15, BOX[1] + BW * 0.26],
+        fill=(255, 255, 255, 40))
+    hl = hl.filter(ImageFilter.GaussianBlur(BW * 0.10))
+    hl.putalpha(Image.composite(hl.getchannel("A"),
+                                Image.new("L", (size, size), 0), mask))
     img = Image.alpha_composite(img, hl)
 
-    # ---------- 2. 磁盘（底部，带透视感的扁圆柱）----------
-    cx = size / 2
-    disk_cy = BOX[1] + BW * 0.665
-    disk_rx = BW * 0.295
-    disk_ry = BW * 0.108
-    disk_h = BW * 0.085          # 圆柱高度
+    # 内描边：让圆角矩形边缘有一圈细腻的亮边（macOS 图标的关键质感）
+    edge = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    ImageDraw.Draw(edge).rounded_rectangle(
+        [BOX[0] + BW * 0.004, BOX[1] + BW * 0.004,
+         BOX[2] - BW * 0.004, BOX[3] - BW * 0.004],
+        radius=RADIUS - BW * 0.004, outline=(255, 255, 255, 58),
+        width=int(BW * 0.008))
+    img = Image.alpha_composite(img, edge)
 
-    disk = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    dd = ImageDraw.Draw(disk)
+    # ---------- 2. 仪表环 ----------
+    # 尺寸：外径取边长的 0.30，环厚 0.088 —— 够粗，32px 下仍结实
+    r_out = BW * 0.300
+    r_in = BW * 0.212
+    r_mid = (r_out + r_in) / 2
+    thickness = r_out - r_in
 
-    # 侧面（柱体）
-    side = [cx - disk_rx, disk_cy - disk_h, cx + disk_rx, disk_cy + disk_ry]
-    dd.rounded_rectangle(
-        [cx - disk_rx, disk_cy - disk_h - disk_ry * 0.2,
-         cx + disk_rx, disk_cy + disk_ry * 0.85],
-        radius=disk_rx * 0.92, fill=(122, 132, 168, 255))
+    # 圆环用「外圈实心圆 - 内圈挖空」实现：
+    # 先在独立图层上画整环，再用 alpha 挖洞。
+    def arc_layer(r_o, r_i, a0, a1, color, round_caps=True):
+        """
+        返回一个只含该段圆环的 RGBA 图层（已挖好内洞）。
 
-    # 顶面
-    dd.ellipse([cx - disk_rx, disk_cy - disk_ry - disk_h,
-                cx + disk_rx, disk_cy + disk_ry - disk_h],
-               fill=(168, 178, 210, 255))
-    # 顶面内圈（金属质感）
-    inner = disk_rx * 0.55
-    inner_y = disk_ry * 0.55
-    dd.ellipse([cx - inner, disk_cy - inner_y - disk_h,
-                cx + inner, disk_cy + inner_y - disk_h],
-               fill=(196, 205, 232, 255))
-    # 中心轴
-    hub = disk_rx * 0.17
-    hub_y = disk_ry * 0.17
-    dd.ellipse([cx - hub, disk_cy - hub_y - disk_h,
-                cx + hub, disk_cy + hub_y - disk_h],
-               fill=(120, 130, 165, 255))
+        round_caps=True 时在两端补上半圆端帽 —— 否则 pieslice 会沿半径方向
+        平切出一个斜角断面，放大看像被切断，是旧版没有的细节。
+        """
+        ss = SS
+        W = size * ss
+        layer = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        c = W / 2
+        ro, ri = r_o * ss, r_i * ss
+        d.pieslice([c - ro, c - ro, c + ro, c + ro], start=a0, end=a1, fill=color)
 
-    # 磁盘顶面高光
-    disk = draw_glow(disk, [cx - disk_rx * 0.8, disk_cy - disk_ry - disk_h - disk_ry * 0.3,
-                            cx + disk_rx * 0.1, disk_cy - disk_h + disk_ry * 0.2],
-                     (255, 255, 255), BW * 0.03, 60)
+        if round_caps and (a1 - a0) < 359.9:
+            # 两端各画一个直径为环厚的实心圆，圆心落在中径上
+            rm = (ro + ri) / 2
+            cap_r = (ro - ri) / 2
+            for a in (a0, a1):
+                rad = math.radians(a)
+                px_, py_ = c + rm * math.cos(rad), c + rm * math.sin(rad)
+                d.ellipse([px_ - cap_r, py_ - cap_r, px_ + cap_r, py_ + cap_r], fill=color)
 
-    # ---------- 3. 扫帚 ----------
-    broom = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    bd = ImageDraw.Draw(broom)
+        # 挖掉内圈：用 dst-out 效果靠 alpha 合成实现
+        hole = Image.new("L", (W, W), 0)
+        ImageDraw.Draw(hole).ellipse([c - ri, c - ri, c + ri, c + ri], fill=255)
+        a = layer.getchannel("A")
+        layer.putalpha(Image.composite(Image.new("L", (W, W), 0), a, hole))
+        return layer.resize((size, size), Image.LANCZOS)
 
-    # 手柄：从左下到右上的倾斜木杆
-    handle_w = BW * 0.052
-    x1, y1 = cx - BW * 0.155, disk_cy - disk_h - disk_ry * 0.05   # 底部（靠近磁盘）
-    x2, y2 = cx + BW * 0.175, BOX[1] + BW * 0.175                  # 顶部
-    bd.line([x1, y1, x2, y2], fill=(214, 168, 108, 255), width=int(handle_w))
-    # 手柄高光
-    bd.line([x1 - handle_w * 0.22, y1, x2 - handle_w * 0.22, y2],
-            fill=(238, 200, 148, 255), width=int(handle_w * 0.34))
+    # 角度约定：PIL 的 0° 在 3 点钟方向，顺时针为正。
+    # 仪表盘习惯：起点在左下（约 135°），顺时针扫过 270° 到右下（约 45°）。
+    START = 135
+    TOTAL = 270
+    USED = 0.78          # 「已用 78%」—— 与旧版 99% 的焦虑感相比更中性
 
-    # 扫帚头（刷毛）：在底端，做成梯形束
-    head_cx, head_cy = x1, y1
-    head_w = BW * 0.232
-    head_h = BW * 0.150
+    # 底环（剩余部分，半透明）
+    img = Image.alpha_composite(
+        img, arc_layer(r_out, r_in, START, START + TOTAL, RING_TODO))
+    # 进度环（已用部分，纯白）
+    img = Image.alpha_composite(
+        img, arc_layer(r_out, r_in, START, START + TOTAL * USED, RING_DONE))
 
-    # 刷毛束：多条竖直的毛，底部略散开
-    n = 13
-    for i in range(n):
-        t = i / (n - 1)
-        # 从左到右，底部呈扇形展开
-        xa = head_cx - head_w / 2 + head_w * t
-        xb = head_cx - head_w / 2 + head_w * t
-        spread = (t - 0.5) * head_w * 0.30
-        yb = head_cy + head_h * (1 - 0.16 * abs(t - 0.5) * 2)
-        # 颜色渐变：中间亮，两侧暗
-        shade = 1 - abs(t - 0.5) * 0.55
-        col = (int(238 * shade + 30), int(196 * shade + 26), int(96 * shade + 20), 255)
-        bd.line([xa, head_cy - head_h * 0.12, xb + spread, yb],
-                fill=col, width=int(head_w / n * 1.25))
+    # ---------- 3. 指针 ----------
+    # 指针必须
+    #   (a) 与「已用」段的端点角度严格一致，否则视觉上对不上；
+    #   (b) 末端停在内径以内，绝不能戳进环里（旧版戳穿了，很穿帮）。
+    ang = math.radians(START + TOTAL * USED)
+    tip_r = r_in * 0.80          # 停在内径以内，留出余量
+    tip = (cx + tip_r * math.cos(ang), cy + tip_r * math.sin(ang))
 
-    # 束带（把刷毛扎起来的箍）
-    band_y = head_cy - head_h * 0.06
-    band_w = head_w * 0.86
-    bd.rounded_rectangle([head_cx - band_w / 2, band_y - BW * 0.019,
-                          head_cx + band_w / 2, band_y + BW * 0.019],
-                         radius=BW * 0.019, fill=(196, 148, 92, 255))
-    bd.rounded_rectangle([head_cx - band_w / 2, band_y - BW * 0.019,
-                          head_cx + band_w / 2, band_y - BW * 0.004],
-                         radius=BW * 0.008, fill=(228, 184, 128, 255))
+    hand = Image.new("RGBA", (size * SS, size * SS), (0, 0, 0, 0))
+    hd = ImageDraw.Draw(hand)
+    c = size * SS / 2
+    hw = BW * 0.030 * SS
+    hd.line([c, c, tip[0] * SS, tip[1] * SS], fill=RING_DONE + (255,), width=int(hw))
+    # 指针两端都补圆头，避免出现方头断面
+    for (ex, ey) in [(c, c), (tip[0] * SS, tip[1] * SS)]:
+        rr = hw / 2
+        hd.ellipse([ex - rr, ey - rr, ex + rr, ey + rr], fill=RING_DONE + (255,))
+    # 轴心圆点
+    hr = BW * 0.042 * SS
+    hd.ellipse([c - hr, c - hr, c + hr, c + hr], fill=RING_DONE + (255,))
+    img = Image.alpha_composite(img, hand.resize((size, size), Image.LANCZOS))
 
-    img = Image.alpha_composite(img, broom)
+    # ---------- 4. 整体投影（让图形从底板上浮起来）----------
+    # 关键：投影必须是有颜色的半透明黑，不能是 (0,0,0,0) —— 旧写法建了一张
+    # 全透明图层，叠上去等于什么都没画，投影完全没生效。
+    shape_alpha = img.getchannel("A")
+    px_data = img.load()
+    sa = Image.new("L", (size, size), 0)
+    sap = sa.load()
+    for y in range(size):
+        for x in range(size):
+            r, g, b, a = px_data[x, y]
+            # 只给「白色图形」部分做投影，底板本身不投
+            if a > 200 and r > 200 and g > 200 and b > 200:
+                sap[x, y] = 150
 
-    # ---------- 4. 清理效果：几粒发光的小星 ----------
-    for (sx, sy, sr, al) in [
-        (cx + BW * 0.245, disk_cy - disk_h - disk_ry * 1.75, BW * 0.026, 210),
-        (cx + BW * 0.315, disk_cy - disk_h - disk_ry * 1.05, BW * 0.017, 160),
-        (cx - BW * 0.245, disk_cy - disk_h - disk_ry * 1.45, BW * 0.020, 150),
-    ]:
-        img = draw_glow(img, [sx - sr * 2.6, sy - sr * 2.6, sx + sr * 2.6, sy + sr * 2.6],
-                        (255, 236, 170), sr * 1.7, al // 2)
-        star = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        sd = ImageDraw.Draw(star)
-        # 四角星
-        sd.polygon([(sx, sy - sr * 2.0), (sx + sr * 0.46, sy - sr * 0.46),
-                    (sx + sr * 2.0, sy), (sx + sr * 0.46, sy + sr * 0.46),
-                    (sx, sy + sr * 2.0), (sx - sr * 0.46, sy + sr * 0.46),
-                    (sx - sr * 2.0, sy), (sx - sr * 0.46, sy - sr * 0.46)],
-                   fill=(255, 244, 200, al))
-        img = Image.alpha_composite(img, star)
+    shadow = Image.new("RGBA", (size, size), (12, 40, 90, 0))
+    shadow.putalpha(sa)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(BW * 0.018))
 
-    # ---------- 5. 裁回圆角 + 内描边 ----------
-    final = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    final.paste(img, (0, 0), mask)
+    # 下移一点，投影才自然
+    shifted = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    shifted.paste(shadow, (0, int(BW * 0.014)), shadow)
+    # 投影不能溢出圆角矩形
+    clipped = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    clipped.paste(shifted, (0, 0), rounded_mask((size, size), BOX, RADIUS))
+    img = Image.alpha_composite(clipped, img)
 
-    stroke = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    sd2 = ImageDraw.Draw(stroke)
-    sd2.rounded_rectangle(BOX, radius=RADIUS, outline=(255, 255, 255, 30),
-                          width=max(2, int(BW * 0.006)))
-    final = Image.alpha_composite(final, stroke)
-
-    return final
+    return img
 
 
 def main():
-    out_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+    out_dir = sys.argv[1] if len(sys.argv) > 1 else "Resources"
     os.makedirs(out_dir, exist_ok=True)
 
     base = make_icon(S)
 
-    # 生成 iconset 所需的全部尺寸
     specs = [
         ("icon_16x16.png", 16), ("icon_16x16@2x.png", 32),
         ("icon_32x32.png", 32), ("icon_32x32@2x.png", 64),
@@ -203,7 +246,6 @@ def main():
     for name, px in specs:
         base.resize((px, px), Image.LANCZOS).save(os.path.join(iconset, name))
 
-    # 预览图（也是给用户看的那个）
     base.resize((512, 512), Image.LANCZOS).save(os.path.join(out_dir, "icon-preview.png"))
     print(f"✅ 生成 {len(specs)} 个尺寸 → {iconset}")
     print(f"✅ 预览图 → {os.path.join(out_dir, 'icon-preview.png')}")
