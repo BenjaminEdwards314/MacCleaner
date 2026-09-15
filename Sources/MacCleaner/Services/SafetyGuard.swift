@@ -31,6 +31,13 @@ enum SafetyGuard {
         case verifiedDuplicate
         /// 应用本体或其已知残留
         case appUninstall
+        /// 已卸载应用的残余文件。
+        ///
+        /// 与 `.appUninstall` 的区别：那个处理「应用还在，要连同残留一起删」，
+        /// 这个处理「应用已经不在了，只剩残留」。
+        /// 由 `OrphanScanner` 在确认条目 id 不被任何已安装应用（含其内部
+        /// 全部嵌套 bundle id）引用、且近期未被访问之后产出。
+        case orphanResidue
     }
 
     /// 允许被清理的路径前缀（全部位于用户 Home 内的缓存/日志区域）
@@ -99,6 +106,14 @@ enum SafetyGuard {
             "\(home)/Library/Cookies",
             "\(home)/Library/LaunchAgents",
             "\(home)/Library/Application Scripts",
+            // 沙盒容器。这里只放行「容器内部的条目」，
+            // 容器目录本身仍由 tooShallow 拦下 —— 与其余目录同一套规则。
+            // 开放原因：最大的两块残留就在这里（实测元宝 294MB、钉钉 282MB），
+            // 不开放会让「卸载残余」功能漏掉绝大部分体积。
+            // 风险控制改由 OrphanScanner 承担：只收录 id 不被任何已安装应用
+            // （含其内部全部嵌套 bundle id）引用、且 90 天内未被访问的条目。
+            "\(home)/Library/Containers",
+            "\(home)/Library/Group Containers",
         ]
     }()
 
@@ -188,6 +203,15 @@ enum SafetyGuard {
 
         case .appUninstall:
             if isAppBundle(path, home: home) { return }
+            for root in residueRoots where path.hasPrefix(root + "/") { return }
+            if residueRoots.contains(path) { throw Denial.tooShallow(path) }
+            throw Denial.notAllowed(path)
+
+        case .orphanResidue:
+            // 与 .appUninstall 用同一组 residueRoots（10 个 ~/Library 子目录）。
+            // 目录本身仍然拒绝 —— 只允许删里面的具体条目，
+            // 避免出现「把 ~/Library/Caches 整个删掉」这种事。
+            // isAppBundle 在这里刻意不放开：卸载残余不该动应用本体。
             for root in residueRoots where path.hasPrefix(root + "/") { return }
             if residueRoots.contains(path) { throw Denial.tooShallow(path) }
             throw Denial.notAllowed(path)

@@ -27,6 +27,7 @@ sources_for() {
         AppInventoryTests)     echo "$SRC/Scanner/AppInventory.swift $SRC/Services/SizeCalculator.swift" ;;
         CleanupHistoryTests)   echo "$SRC/Models/CleanupHistory.swift" ;;
         DiskHealthProbeTests)  echo "$SRC/Services/DiskHealthProbe.swift" ;;
+        OrphanScannerTests)    echo "$SRC/Scanner/OrphanScanner.swift $SRC/Services/SizeCalculator.swift $SRC/Services/SafetyGuard.swift $SRC/Services/CleanupEngine.swift $SRC/Models/Models.swift" ;;
         *)                     echo "" ;;
     esac
 }

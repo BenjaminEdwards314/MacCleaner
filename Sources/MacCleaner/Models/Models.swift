@@ -39,6 +39,7 @@ enum CleanupCategory: String, Codable, CaseIterable, Identifiable {
     case duplicates       // 重复文件（内容完全一致）
     case appResidue       // 应用卸载残留
     case appBundle        // 应用本体
+    case orphanResidue    // 已卸载应用的残余文件
 
     var id: String { rawValue }
 
@@ -58,6 +59,7 @@ enum CleanupCategory: String, Codable, CaseIterable, Identifiable {
         case .duplicates: return "重复文件"
         case .appResidue: return "应用残留"
         case .appBundle: return "应用本体"
+        case .orphanResidue: return "卸载残余"
         }
     }
 
@@ -77,6 +79,7 @@ enum CleanupCategory: String, Codable, CaseIterable, Identifiable {
         case .duplicates: return "doc.on.doc"
         case .appResidue: return "shippingbox"
         case .appBundle: return "app.dashed"
+        case .orphanResidue: return "questionmark.folder"
         }
     }
 }

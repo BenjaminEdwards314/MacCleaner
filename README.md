@@ -2,7 +2,7 @@
 
 原生 SwiftUI 应用。可视化展示磁盘占用，安全清理缓存与垃圾文件。
 
-**七个功能**：清理 · 空间 · 重复文件 · 内存 · 应用卸载 · 清理历史 · 磁盘健康
+**八个功能**：清理 · 空间 · 重复文件 · 内存 · 应用卸载 · 卸载残余 · 清理历史 · 磁盘健康
 
 ![平台](https://img.shields.io/badge/macOS-15%2B-blue) ![Swift](https://img.shields.io/badge/Swift-6.1-orange)
 
@@ -19,8 +19,8 @@ open build/MacCleaner.app
 需要可分发的安装包时用 `./package.sh` —— 它会编译 arm64 + x86_64
 并合并为通用二进制，再打成 `build/MacCleaner-1.0.dmg`。
 
-跑测试：`./run_tests.sh`（5 个测试文件，覆盖安全护栏、重复文件哈希、
-应用残留匹配、历史持久化、磁盘信息解析）。
+跑测试：`./run_tests.sh`（6 个测试文件，覆盖安全护栏、重复文件哈希、
+应用残留匹配、卸载残余判定、历史持久化、磁盘信息解析）。
 
 ## 界面
 
@@ -33,6 +33,7 @@ open build/MacCleaner.app
 | 存储 | 重复文件 | 内容哈希查找重复副本 |
 | 系统 | 内存 | 实时内存观测 |
 | 工具 | 应用卸载 | 应用本体 + 残留清理 |
+| 工具 | 卸载残余 | 已删除应用留下的无主文件 |
 | 工具 | 清理历史 | 累计释放量与趋势 |
 | 工具 | 磁盘健康 | 文件系统 / APFS / SMART |
 
@@ -94,6 +95,34 @@ open build/MacCleaner.app
 
 只做**目录列举 + 名称匹配**（残留命名约定很固定：等于 bundle id 或以 `<bundle id>.` 开头），
 不递归遍历，所以很快。系统自带应用（`com.apple.*`）不列出。
+
+### 卸载残余
+
+上一节处理「应用还在」，这一节处理「应用已经删了，只留下一堆无主文件」。
+
+判定一个文件是否无主，比看上去难。**关键在于要把已安装应用内部的全部标识都读出来**：
+
+| 做法 | 本机读到的标识数 |
+|---|---|
+| 只读 `/Applications/*.app` 的顶层 `Info.plist` | 29 |
+| 递归每个 `.app` 内部的**所有** `Info.plist` | **777** |
+
+差的那 748 个会造成严重误判。实测例子：`Docker.app` 的标识是 `com.docker.docker`，
+但它内部嵌套的 Helper 用的是 `com.electron.dockerdesktop`。
+只比对顶层标识，就会把 `~/Library/Preferences/com.electron.dockerdesktop.plist`
+当成孤儿推荐删除 —— 而它属于一个正在使用的应用。
+
+再加上两条保守规则：
+
+- **沙盒 team-id 前缀要剥离**：`5ZSL2CJU2T.com.dingtalk.mac` 要能匹配上 `com.dingtalk.mac`
+- **90 天内被访问过的一律跳过**：有些应用不在自己的配置里声明所用容器
+  （实测 Docker 就是如此，`group.com.docker` 在 `Docker.app` 内部查不到），
+  纯靠标识匹配会误报，用「最近是否动过」兜底
+
+Apple 系统组件（任何位置含 `com.apple.`）永不列出。结果按厂商聚类，
+每项都标出所属 `~/Library` 子目录、体积和最后修改时间。
+
+删除只走废纸篓，**不提供永久删除**。
 
 ### 清理历史
 
@@ -211,7 +240,7 @@ free 常年很低是正常现象。只统计 free 会严重低估可用量。
 **授权只放宽「白名单」这一项**，其余检查全部照旧生效：
 系统目录（`/System`、`/usr`、`/Library` …）任何授权都不放行，
 受保护文件名（`.ssh`、`Keychains` …）优先级高于授权，
-`~/Library/Containers` 与 `Group Containers` **未开放**（沙盒数据与系统组件混放，误删风险高）。
+`~/Library/Containers` 与 `Group Containers` 在 **`.orphanResidue` 与 `.appUninstall`** 两个授权下开放**内部条目**的删除（目录本身仍拒绝）。这两个授权都要求 bundle id 精确匹配，且 `.orphanResidue` 还额外要求 90 天内未被访问。`.verifiedDuplicate` 下仍不开放 —— 那个授权只保证「内容有副本」，不保证「容器属于已卸载的应用」。
 
 删除时仍会二次校验，即使界面出错也拦得住。
 
@@ -234,15 +263,16 @@ free 常年很低是正常现象。只统计 free 会严重低估可用量。
 ./run_tests.sh SafetyGuard  # 只跑名字匹配的
 ```
 
-5 个测试文件，覆盖：
+6 个测试文件，覆盖：
 
 | 测试 | 覆盖内容 |
 |---|---|
-| `SafetyGuardTests` | **安全倒退检查**：60 条路径对比新旧实现，确认无授权时行为完全一致；18 条授权边界；9 条 `isInsideTrash` 用例 |
+| `SafetyGuardTests` | **安全倒退检查**：60 条路径对比新旧实现，确认无授权时行为完全一致；25 条授权边界；14 条下载边界；23 条卸载残余边界；9 条 `isInsideTrash` 用例 |
 | `DuplicateFinderTests` | 真实文件验证：同内容检出、同尺寸不同内容排除、前 4 KB 相同整体不同排除、硬链接排除、小于 1 MB 跳过、选择策略 |
 | `AppInventoryTests` | 真实环境验证：枚举应用、排除系统应用、残留命名与 bundle id 匹配、本体/残留的风险等级与类别 |
 | `CleanupHistoryTests` | 持久化往返、0 释放量不记录、500 条上限截断、每日补零、按类别汇总 |
 | `DiskHealthProbeTests` | 真实 `diskutil` 输出解析：卷信息、APFS 容器、SMART 可读性 |
+| `OrphanScannerTests` | 标识形态识别（正例/反例）、后缀剥离、team-id 前缀剥离、Apple 组件排除、双向前缀匹配、真实扫描 + 真实删除 |
 
 `SafetyGuardTests` 里最关键的断言是**「安全倒退检查」**：它把当前实现与
 `git HEAD` 里的旧实现逐条对比，任何「旧版拒绝、新版允许」的路径都会被列出并判失败。
@@ -285,12 +315,13 @@ MacCleaner/
 ├── Resources/
 │   ├── MacCleaner.icns                   # 构建时被打包进 .app 的图标
 │   └── icon-preview.png                  # 仅供预览，不参与构建
-├── Tests/                                # 5 个独立测试（各自带最小依赖桩）
+├── Tests/                                # 6 个独立测试（各自带最小依赖桩）
 │   ├── SafetyGuardTests.swift            # 安全倒退检查 + 授权边界 + isInsideTrash
 │   ├── DuplicateFinderTests.swift        # 真实文件验证三阶段哈希
 │   ├── AppInventoryTests.swift           # 真实环境验证应用枚举与残留匹配
 │   ├── CleanupHistoryTests.swift         # 持久化往返、上限截断
-│   └── DiskHealthProbeTests.swift        # diskutil 输出解析
+│   ├── DiskHealthProbeTests.swift        # diskutil 输出解析
+│   └── OrphanScannerTests.swift          # 卸载残余判定 + 真实删除
 ├── Sources/MacCleaner/
 │   ├── Models/
 │   │   ├── Models.swift                  # 数据结构、风险分级、格式化
@@ -301,7 +332,8 @@ MacCleaner/
 │   │   ├── DiskScanner.swift             # 空间视图节点模型（按需加载一层）
 │   │   ├── DiskNavigator.swift           # 空间视图状态机（两阶段加载）
 │   │   ├── DuplicateFinder.swift         # 重复文件三阶段哈希引擎
-│   │   └── AppInventory.swift            # 应用枚举与残留匹配
+│   │   ├── AppInventory.swift            # 应用枚举与残留匹配
+│   │   └── OrphanScanner.swift           # 卸载残余扫描（已装应用全部标识比对）
 │   ├── Services/
 │   │   ├── SafetyGuard.swift             # 安全护栏（白/黑名单、受限放行、路径穿越防护）
 │   │   ├── CleanupEngine.swift           # 清理执行（移废纸篓，支持 Grant）
@@ -319,6 +351,7 @@ MacCleaner/
 │       ├── MemoryView.swift              # 内存视图
 │       ├── DuplicateView.swift           # 重复文件视图
 │       ├── UninstallerView.swift         # 应用卸载视图（左列表 + 右明细）
+│       ├── OrphanResidueView.swift       # 卸载残余视图（按厂商聚类）
 │       ├── HistoryView.swift             # 清理历史与趋势图
 │       └── DiskHealthView.swift          # 磁盘健康视图
 └── build/                                # 构建产物（可随时删除）

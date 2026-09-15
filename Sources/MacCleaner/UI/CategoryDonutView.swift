@@ -97,6 +97,7 @@ struct CategoryDonutView: View {
         case .duplicates: return .mint
         case .appResidue: return .purple
         case .appBundle: return .red
+        case .orphanResidue: return .orange
         }
     }
 }

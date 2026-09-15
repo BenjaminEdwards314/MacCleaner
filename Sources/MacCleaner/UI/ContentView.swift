@@ -22,6 +22,7 @@ struct ContentView: View {
     @StateObject private var inventory = AppInventory()
     @StateObject private var history = CleanupHistory()
     @StateObject private var diskHealth = DiskHealthProbe()
+    @StateObject private var orphanScanner = OrphanScanner()
 
     @State private var selection: Set<UUID> = []
     @State private var selectedCategory: CleanupCategory?
@@ -43,7 +44,7 @@ struct ContentView: View {
     }
 
     enum Section: String, CaseIterable, Identifiable {
-        case clean, space, memory, duplicates, uninstall, history, health
+        case clean, space, memory, duplicates, uninstall, orphans, history, health
         var id: String { rawValue }
 
         var title: String {
@@ -53,6 +54,7 @@ struct ContentView: View {
             case .memory: return "内存"
             case .duplicates: return "重复文件"
             case .uninstall: return "应用卸载"
+            case .orphans: return "卸载残余"
             case .history: return "清理历史"
             case .health: return "磁盘健康"
             }
@@ -65,6 +67,7 @@ struct ContentView: View {
             case .memory: return "memorychip"
             case .duplicates: return "doc.on.doc"
             case .uninstall: return "shippingbox"
+            case .orphans: return "questionmark.folder"
             case .history: return "chart.bar.xaxis"
             case .health: return "internaldrive"
             }
@@ -75,7 +78,7 @@ struct ContentView: View {
             switch self {
             case .clean, .space, .duplicates: return "存储"
             case .memory: return "系统"
-            case .uninstall, .history, .health: return "工具"
+            case .uninstall, .orphans, .history, .health: return "工具"
             }
         }
 
@@ -131,6 +134,7 @@ struct ContentView: View {
             try? await Task.sleep(nanoseconds: 800_000_000)
             switch section {
             case .uninstall:    inventory.startScan()
+            case .orphans:      orphanScanner.startScan()
             case .duplicates:   duplicateFinder.startScan()
             case .clean:        scanner.startScan(deepScan: false)
             default:            break
@@ -212,6 +216,10 @@ struct ContentView: View {
         case .uninstall:
             UninstallerView(inventory: inventory) { items in
                 requestClean(items, grant: .appUninstall)
+            }
+        case .orphans:
+            OrphanResidueView(scanner: orphanScanner) { items in
+                requestClean(items, grant: .orphanResidue)
             }
         case .history:
             HistoryView(history: history)
