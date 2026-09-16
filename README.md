@@ -447,6 +447,20 @@ Symbol not found: _$s7llbuild15ExternalCommandPAAE19depedencyDataFormat...
 实测可处理 26 万文件 / 22.9 GB 的 Codex Crashpad 目录，耗时约 8 秒，
 内存稳定。`errorHandler` 返回 `true` 跳过无权限目录，不会因个别目录中断整次扫描。
 
+### 调试与截图入口
+
+macOS 在未授予辅助功能权限时会**静默拦截合成点击事件**，无法用脚本操作界面。
+因此留了三个启动参数，用于无人值守地逐页截图核对：
+
+| 参数 | 作用 |
+|---|---|
+| `--section=<名称>` | 直接打开指定页面（`clean`/`space`/`memory`/`duplicates`/`uninstall`/`orphans`/`history`/`health`） |
+| `--autoscan` | 启动后自动触发当前页面的扫描，便于截到「有数据」的状态 |
+| `--demo-celebration` | 直接展示清理完成的庆祝动画 |
+
+庆祝动画只在真实清理成功（`freed > 0`）后出现，而合成点击被拦截时无法触发清理，
+所以需要最后这个入口才能核对动画效果。三者都不影响正常启动。
+
 ## 已知限制
 
 - **崩溃转储清理前需先退出对应应用**。Crashpad handler 持有目录时删除可能出错。
