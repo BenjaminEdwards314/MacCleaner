@@ -39,7 +39,7 @@ struct UninstallerView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            Divider()
+            Divider().overlay(PPG.ink.opacity(0.18))
 
             if inventory.isScanning {
                 scanningState
@@ -71,122 +71,190 @@ struct UninstallerView: View {
     // MARK: - 顶部
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "shippingbox")
-                .font(.title2)
-                .foregroundStyle(.purple)
+        VStack(spacing: 0) {
+            ComicSectionHeader(
+                "应用卸载", icon: "shippingbox", tint: PPG.grape,
+                trailing: AnyView(
+                    HStack(spacing: 10) {
+                        if inventory.hasScanned {
+                            TextField("搜索应用", text: $searchText)
+                                .textFieldStyle(.plain)
+                                .font(.ppg(12.5, .bold))
+                                .foregroundStyle(PPG.ink)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 8)
+                                .frame(width: 180)
+                                .background {
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                        .fill(PPG.cream)
+                                        .overlay {
+                                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                                .strokeBorder(PPG.ink, lineWidth: 2.2)
+                                        }
+                                }
+                        }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("应用卸载")
-                    .font(.headline)
-                Text("删除应用本体，并清理它在 ~/Library 里的残留")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+                        if inventory.isScanning {
+                            Button("取消") { inventory.cancel() }
+                                .buttonStyle(ComicButtonStyle(tint: PPG.dangerDeep, size: .regular,
+                                                              textColor: .white))
+                        } else {
+                            Button {
+                                inventory.startScan()
+                            } label: {
+                                Label(inventory.hasScanned ? "重新扫描" : "开始扫描",
+                                      systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(ComicButtonStyle(tint: PPG.sunny, size: .regular))
+                        }
+                    }
+                )
+            )
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
 
-            Spacer()
-
-            if inventory.hasScanned {
-                TextField("搜索应用", text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 160)
-            }
-
-            if inventory.isScanning {
-                Button("取消") { inventory.cancel() }
-            } else {
-                Button {
-                    inventory.startScan()
-                } label: {
-                    Label(inventory.hasScanned ? "重新扫描" : "开始扫描", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderedProminent)
-            }
+            Text("删除应用本体，并清理它在 ~/Library 里的残留")
+                .font(.ppgBody)
+                .foregroundStyle(PPG.ink.opacity(0.6))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.top, 5)
+                .padding(.bottom, 13)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .background {
+            PPG.cream.opacity(0.75)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(PPG.ink.opacity(0.18)).frame(height: 1.5)
+                }
+        }
     }
 
     // MARK: - 状态
 
     private var scanningState: some View {
-        VStack(spacing: 14) {
-            ProgressView().controlSize(.large)
-            Text(inventory.progressText.isEmpty ? "正在扫描…" : inventory.progressText)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Text("只列举 ~/Library 各目录的一层内容来匹配残留，不递归遍历")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+        VStack(spacing: 0) {
+            VStack(spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "sparkles")
+                        .font(.ppg(20, .black))
+                        .foregroundStyle(PPG.bubbles)
+                    Text(inventory.progressText.isEmpty ? "正在扫描…" : inventory.progressText)
+                        .font(.ppg(20, .black))
+                        .foregroundStyle(PPG.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 10)
+                    ProgressView().controlSize(.small)
+                }
+
+                Text("只列举 ~/Library 各目录的一层内容来匹配残留，不递归遍历")
+                    .font(.ppgBody)
+                    .foregroundStyle(PPG.ink.opacity(0.6))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .comicCard(tint: PPG.bubbles, padding: 22)
+            .frame(maxWidth: 620)
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "shippingbox")
-                .font(.system(size: 44))
-                .foregroundStyle(.tertiary)
-            Text("还没有扫描过")
-                .font(.title3)
-            Text("点击「开始扫描」列出已安装的应用及其残留")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ComicEmptyState(
+            icon: "shippingbox",
+            title: "还没有扫描过",
+            message: "点击「开始扫描」列出已安装的应用及其残留",
+            tint: PPG.grape,
+            action: (title: "开始扫描", handler: { inventory.startScan() })
+        )
+        .padding(20)
     }
 
     private var noAppsState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "questionmark.folder")
-                .font(.system(size: 44))
-                .foregroundStyle(.tertiary)
-            Text("未找到可卸载的应用")
-                .font(.title3)
-            Text("系统自带应用不在此列出")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ComicEmptyState(
+            icon: "questionmark.folder",
+            title: "未找到可卸载的应用",
+            message: "系统自带应用不在此列出",
+            tint: PPG.sunny
+        )
+        .padding(20)
     }
 
     // MARK: - 左侧应用列表
 
     private var appList: some View {
-        List(selection: $selectedAppID) {
-            ForEach(filteredApps) { app in
-                HStack(spacing: 10) {
-                    AppIconView(url: app.bundleURL)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(app.name)
-                            .font(.callout.weight(.medium))
-                            .lineLimit(1)
-                        HStack(spacing: 5) {
-                            if app.residueSize > 0 {
-                                Text("残留 \(Fmt.size(app.residueSize))")
-                                    .font(.caption2)
-                                    .foregroundStyle(.orange)
-                            } else {
-                                Text("无残留")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                        }
-                    }
-
-                    Spacer()
-
-                    Text(Fmt.size(app.totalSize))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+        ScrollView {
+            LazyVStack(spacing: 7) {
+                ForEach(filteredApps) { app in
+                    appRow(app)
                 }
-                .tag(app.id)
-                .padding(.vertical, 2)
             }
+            .padding(10)
         }
-        .listStyle(.sidebar)
+    }
+
+    private func appRow(_ app: AppInventory.InstalledApp) -> some View {
+        let isSel = selectedApp?.id == app.id
+        // 用应用在筛选结果里的固定序号循环取色，不用 hashValue
+        let idx = filteredApps.firstIndex { $0.id == app.id } ?? 0
+        let tint = PPG.girl(idx)
+
+        return Button {
+            withAnimation(.spring(response: 0.26, dampingFraction: 0.75)) {
+                selectedAppID = app.id
+            }
+        } label: {
+            HStack(spacing: 10) {
+                AppIconView(url: app.bundleURL, size: 30)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(app.name)
+                        .font(.ppg(13.5, isSel ? .black : .bold))
+                        .foregroundStyle(PPG.ink)
+                        .lineLimit(1)
+
+                    if app.residueSize > 0 {
+                        ComicBadge(text: "残留 \(Fmt.size(app.residueSize))",
+                                   tint: PPG.sunny, icon: "shippingbox.fill")
+                    } else {
+                        ComicBadge(text: "无残留", tint: PPG.cream,
+                                   icon: "checkmark", outlined: true)
+                    }
+                }
+
+                Spacer(minLength: 6)
+
+                Text(Fmt.size(app.totalSize))
+                    .font(.ppg(12.5, .heavy))
+                    .foregroundStyle(PPG.ink.opacity(0.7))
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                // 选中态：主角色填充 + 黑描边 + 硬阴影
+                if isSel {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(tint.opacity(0.34))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(PPG.ink, lineWidth: 2.2)
+                        }
+                        .background {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .fill(PPG.ink.opacity(0.8))
+                                .offset(x: 2.5, y: 2.5)
+                        }
+                } else {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(PPG.ink.opacity(0.04))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SidebarRowStyle())
     }
 
     // MARK: - 右侧详情
@@ -195,7 +263,7 @@ struct UninstallerView: View {
     private var detailPane: some View {
         if let app = selectedApp {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 18) {
                     detailHeader(app)
 
                     bundleSection(app)
@@ -206,11 +274,13 @@ struct UninstallerView: View {
                 .padding(18)
             }
         } else {
-            VStack {
-                Text("从左侧选择一个应用")
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ComicEmptyState(
+                icon: "hand.point.left.fill",
+                title: "从左侧选择一个应用",
+                message: "选中后可查看它的本体与残留明细",
+                tint: PPG.grape
+            )
+            .padding(20)
         }
     }
 
@@ -220,101 +290,114 @@ struct UninstallerView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name)
-                    .font(.title3.weight(.semibold))
+                    .font(.ppg(20, .black))
+                    .foregroundStyle(PPG.ink)
                 Text(app.bundleID)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.ppg(11.5, .semibold))
+                    .foregroundStyle(PPG.ink.opacity(0.55))
                     .textSelection(.enabled)
-                Text("版本 \(app.version)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                ComicBadge(text: "版本 \(app.version)", tint: PPG.bubbles, icon: "tag.fill")
             }
 
-            Spacer()
+            Spacer(minLength: 8)
         }
+        .comicCard(tint: PPG.grape, padding: 16)
     }
 
     private func bundleSection(_ app: AppInventory.InstalledApp) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             sectionTitle("应用本体", icon: "app.dashed", detail: Fmt.size(app.bundleSize))
 
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                Text("删除后该应用将无法使用，需要重新下载安装")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-
-                Button {
-                    confirmPayload = ConfirmPayload(
-                        items: [inventory.bundleItem(appIndex: indexOf(app))].compactMap { $0 },
-                        title: "卸载「\(app.name)」？",
-                        message: "将把应用本体移入废纸篓（\(Fmt.size(app.bundleSize))）。\n如需彻底清理，请同时勾选下方的残留项。"
-                    )
-                } label: {
-                    Label("仅卸载本体", systemImage: "trash")
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.ppg(13, .black))
+                        .foregroundStyle(PPG.danger)
+                    Text("删除后该应用将无法使用，需要重新下载安装")
+                        .font(.ppgBody)
+                        .foregroundStyle(PPG.ink.opacity(0.65))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
                 }
-                .tint(.red)
 
-                Button {
-                    var items: [CleanupItem] = []
-                    if let b = inventory.bundleItem(appIndex: indexOf(app)) { items.append(b) }
-                    inventory.selectAllResidues(appIndex: indexOf(app))
-                    items.append(contentsOf: inventory.selectedResidueItems().filter { item in
-                        app.residues.contains { $0.url == item.url }
-                    })
-                    confirmPayload = ConfirmPayload(
-                        items: items,
-                        title: "彻底卸载「\(app.name)」？",
-                        message: "将把应用本体（\(Fmt.size(app.bundleSize))）与 \(app.residues.count) 项残留（\(Fmt.size(app.residueSize))）一起移入废纸篓。\n共释放约 \(Fmt.size(app.totalSize))。"
-                    )
-                } label: {
-                    Label("彻底卸载", systemImage: "trash.slash")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
+                HStack(spacing: 10) {
+                    Spacer(minLength: 0)
 
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([app.bundleURL])
-                } label: {
-                    Image(systemName: "folder")
+                    Button {
+                        confirmPayload = ConfirmPayload(
+                            items: [inventory.bundleItem(appIndex: indexOf(app))].compactMap { $0 },
+                            title: "卸载「\(app.name)」？",
+                            message: "将把应用本体移入废纸篓（\(Fmt.size(app.bundleSize))）。\n如需彻底清理，请同时勾选下方的残留项。"
+                        )
+                    } label: {
+                        Label("仅卸载本体", systemImage: "trash.fill")
+                    }
+                    .buttonStyle(ComicButtonStyle(tint: PPG.dangerDeep, size: .regular,
+                                                  textColor: .white))
+
+                    Button {
+                        var items: [CleanupItem] = []
+                        if let b = inventory.bundleItem(appIndex: indexOf(app)) { items.append(b) }
+                        inventory.selectAllResidues(appIndex: indexOf(app))
+                        items.append(contentsOf: inventory.selectedResidueItems().filter { item in
+                            app.residues.contains { $0.url == item.url }
+                        })
+                        confirmPayload = ConfirmPayload(
+                            items: items,
+                            title: "彻底卸载「\(app.name)」？",
+                            message: "将把应用本体（\(Fmt.size(app.bundleSize))）与 \(app.residues.count) 项残留（\(Fmt.size(app.residueSize))）一起移入废纸篓。\n共释放约 \(Fmt.size(app.totalSize))。"
+                        )
+                    } label: {
+                        Label("彻底卸载", systemImage: "trash.slash.fill")
+                    }
+                    .buttonStyle(ComicButtonStyle(tint: PPG.dangerDeep, size: .large,
+                                                  textColor: .white))
+
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([app.bundleURL])
+                    } label: {
+                        Image(systemName: "folder.fill")
+                    }
+                    .buttonStyle(ComicIconButtonStyle(tint: PPG.sunny, diameter: 42))
+                    .help("在访达中显示")
                 }
-                .help("在访达中显示")
             }
-            .padding(12)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .comicCard(tint: PPG.danger, padding: 14)
         }
     }
 
     private func residueSection(_ app: AppInventory.InstalledApp) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
                 sectionTitle("残留文件", icon: "shippingbox", detail: Fmt.size(app.residueSize))
-                Spacer()
+
                 if !app.residues.isEmpty {
                     Button("全选") { inventory.selectAllResidues(appIndex: indexOf(app)) }
-                        .font(.caption)
+                        .buttonStyle(ComicButtonStyle(tint: PPG.buttercup, size: .regular,
+                                                      burst: false))
                     Button("全不选") { inventory.selectNothing(appIndex: indexOf(app)) }
-                        .font(.caption)
+                        .buttonStyle(ComicButtonStyle(tint: PPG.cream, size: .regular,
+                                                      burst: false, outlined: true))
                 }
             }
 
             if app.residues.isEmpty {
                 Text("未发现该应用的残留文件")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .padding(.vertical, 8)
+                    .font(.ppgBody)
+                    .foregroundStyle(PPG.ink.opacity(0.45))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .comicCard(tint: PPG.grape, padding: 0)
             } else {
-                VStack(spacing: 0) {
+                VStack(spacing: 3) {
                     ForEach(Array(app.residues.enumerated()), id: \.element.id) { ri, residue in
                         residueRow(appIndex: indexOf(app), ri: ri, residue: residue)
-                        if ri != app.residues.count - 1 {
-                            Divider().padding(.leading, 34)
-                        }
                     }
                 }
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .comicCard(tint: PPG.buttercup, padding: 8)
 
                 HStack {
                     Spacer()
@@ -327,9 +410,10 @@ struct UninstallerView: View {
                             message: "将把 \(inventory.selectedCount) 项残留移入废纸篓。\n应用本体保留，仍可正常使用。"
                         )
                     } label: {
-                        Label("清理勾选的残留", systemImage: "trash")
+                        Label("清理勾选的残留", systemImage: "trash.fill")
                     }
-                    .tint(.orange)
+                    .buttonStyle(ComicButtonStyle(tint: PPG.dangerDeep, size: .regular,
+                                                  textColor: .white))
                     .disabled(inventory.selectedCount == 0)
                 }
             }
@@ -341,74 +425,83 @@ struct UninstallerView: View {
         ri: Int,
         residue: AppInventory.Residue
     ) -> some View {
-        HStack(spacing: 10) {
-            Toggle("", isOn: Binding(
-                get: { residue.isSelected },
-                set: { _ in inventory.toggle(appIndex: appIndex, residueIndex: ri) }
-            ))
-            .labelsHidden()
-            .toggleStyle(.checkbox)
+        // 按行号循环取主角色，不用 hashValue
+        let tint = PPG.girl(ri)
+
+        return HStack(spacing: 11) {
+            ComicCheckbox(isOn: residue.isSelected, tint: tint) {
+                inventory.toggle(appIndex: appIndex, residueIndex: ri)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(residue.url.lastPathComponent)
-                    .font(.callout)
+                    .font(.ppg(13, .bold))
+                    .foregroundStyle(PPG.ink)
                     .lineLimit(1)
+                    .truncationMode(.middle)
                 Text("~/Library/\(residue.kind)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.ppg(10.5, .medium))
+                    .foregroundStyle(PPG.ink.opacity(0.45))
             }
 
-            Spacer()
+            Spacer(minLength: 6)
 
             Text(Fmt.size(residue.size))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.ppg(12.5, .heavy))
+                .foregroundStyle(PPG.ink)
                 .monospacedDigit()
 
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([residue.url])
             } label: {
-                Image(systemName: "folder").font(.caption)
+                Image(systemName: "folder.fill")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .buttonStyle(ComicIconButtonStyle(tint: PPG.sunny, diameter: 32))
+            .help("在访达中显示")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 11)
         .padding(.vertical, 7)
+        .background {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(residue.isSelected ? tint.opacity(0.2) : PPG.ink.opacity(0.04))
+        }
+        // 整行可点：命中区从勾选框扩大到整行
+        .contentShape(Rectangle())
+        .onTapGesture {
+            inventory.toggle(appIndex: appIndex, residueIndex: ri)
+        }
     }
 
     private var limitationsNote: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("未纳入清理范围", systemImage: "info.circle")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            ComicSectionHeader("未纳入清理范围", icon: "info.circle", tint: PPG.sunny)
+
             Text("• ~/Library/Containers 与 Group Containers 中的沙盒数据未开放清理 —— 该目录同时存放系统组件数据，误删风险高。\n• 应用可能在其他位置留有数据，本工具只能识别 ~/Library 下的常见残留位置。")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .font(.ppgCaption)
+                .foregroundStyle(PPG.ink.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
 
             if inventory.skippedDirCount > 0 {
                 Text("• 有 \(inventory.skippedDirCount) 个目录因权限无法读取（可在「系统设置 → 隐私与安全性 → 完全磁盘访问权限」中授权后重试）。")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
+                    .font(.ppgCaption)
+                    .foregroundStyle(PPG.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(12)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .comicCard(tint: PPG.sunny, padding: 14)
     }
 
     private func sectionTitle(_ text: String, icon: String, detail: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
-            Text(text)
-                .font(.callout.weight(.semibold))
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-        }
+        ComicSectionHeader(
+            text, icon: icon, tint: PPG.buttercup,
+            trailing: AnyView(
+                Text(detail)
+                    .font(.ppg(13, .heavy))
+                    .foregroundStyle(PPG.ink)
+                    .monospacedDigit()
+            )
+        )
     }
 
     private func indexOf(_ app: AppInventory.InstalledApp) -> Int {
@@ -430,7 +523,7 @@ private struct AppIconView: View {
             } else {
                 Image(systemName: "app.dashed")
                     .resizable()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PPG.ink.opacity(0.45))
             }
         }
         .frame(width: size, height: size)

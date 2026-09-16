@@ -19,7 +19,7 @@ struct DuplicateView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            Divider()
+            Divider().overlay(PPG.ink.opacity(0.18))
 
             if finder.isScanning {
                 scanningState
@@ -44,63 +44,80 @@ struct DuplicateView: View {
     // MARK: - 顶部工具栏
 
     private var toolbar: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                Image(systemName: "doc.on.doc")
-                    .font(.title2)
-                    .foregroundStyle(.blue)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("重复文件查找")
-                        .font(.headline)
-                    Text("按内容哈希比对，找出完全相同的文件")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                if finder.isScanning {
-                    Button("取消") { finder.cancel() }
-                } else {
-                    Button {
-                        finder.startScan()
-                    } label: {
-                        Label(finder.hasScanned ? "重新扫描" : "开始扫描", systemImage: "magnifyingglass")
+        VStack(spacing: 0) {
+            ComicSectionHeader(
+                "重复文件查找", icon: "doc.on.doc", tint: PPG.bubbles,
+                trailing: AnyView(
+                    HStack(spacing: 10) {
+                        if finder.isScanning {
+                            Button("取消") { finder.cancel() }
+                                .buttonStyle(ComicButtonStyle(tint: PPG.dangerDeep, size: .regular,
+                                                              textColor: .white))
+                        } else {
+                            Button {
+                                finder.startScan()
+                            } label: {
+                                Label(finder.hasScanned ? "重新扫描" : "开始扫描",
+                                      systemImage: "magnifyingglass")
+                            }
+                            .keyboardShortcut("r", modifiers: .command)
+                            .buttonStyle(ComicButtonStyle(tint: PPG.sunny, size: .regular))
+                        }
                     }
-                    .keyboardShortcut("r", modifiers: .command)
-                    .buttonStyle(.borderedProminent)
-                }
-            }
+                )
+            )
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
 
-            HStack(spacing: 8) {
-                Text("扫描范围")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Text("按内容哈希比对，找出完全相同的文件")
+                .font(.ppgBody)
+                .foregroundStyle(PPG.ink.opacity(0.6))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.top, 5)
 
-                ForEach(scanScopeChips, id: \.self) { name in
-                    scopeChip(name)
-                }
-
-                Spacer()
-
-                Text("跳过小于 1 MB 的文件")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
+            scopeBar
+                .padding(.horizontal, 18)
+                .padding(.top, 11)
+                .padding(.bottom, 13)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .background {
+            PPG.cream.opacity(0.75)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(PPG.ink.opacity(0.18)).frame(height: 1.5)
+                }
+        }
     }
 
     private var scanScopeChips: [String] {
         ["下载", "文档", "桌面", "图片", "影片", "音乐"]
     }
 
+    private var scopeBar: some View {
+        HStack(spacing: 8) {
+            Text("扫描范围")
+                .font(.ppg(12.5, .bold))
+                .foregroundStyle(PPG.ink.opacity(0.55))
+
+            ForEach(scanScopeChips, id: \.self) { name in
+                scopeChip(name)
+            }
+
+            Spacer(minLength: 12)
+
+            Text("跳过小于 1 MB 的文件")
+                .font(.ppgCaption)
+                .foregroundStyle(PPG.ink.opacity(0.45))
+        }
+    }
+
     private func scopeChip(_ name: String) -> some View {
         let home = NSHomeDirectory()
         let url = URL(fileURLWithPath: "\(home)/\(englishName(name))")
         let on = finder.roots.contains(url)
+        // 用固定顺序取色，不用 hashValue —— hash 每进程随机加盐，
+        // 重启后同一范围的配色会错位。
+        let tint = PPG.girl(scanScopeChips.firstIndex(of: name) ?? 0)
 
         return Button {
             if on {
@@ -111,17 +128,15 @@ struct DuplicateView: View {
                 finder.roots.append(url)
             }
         } label: {
-            Text(name)
-                .font(.caption)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(
-                    on ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.10),
-                    in: Capsule()
-                )
-                .foregroundStyle(on ? Color.accentColor : .secondary)
+            HStack(spacing: 5) {
+                Image(systemName: on ? "checkmark" : "plus")
+                    .font(.ppg(11, .black))
+                Text(name)
+            }
         }
-        .buttonStyle(.plain)
+        // 选中 = 实心主角色，未选 = 奶油底描边款。两者都是 42pt 高，好点。
+        .buttonStyle(ComicButtonStyle(tint: on ? tint : PPG.cream, size: .regular,
+                                      burst: false, outlined: !on))
         .help(on ? "点击移出扫描范围" : "点击加入扫描范围")
     }
 
@@ -139,47 +154,59 @@ struct DuplicateView: View {
     // MARK: - 各状态
 
     private var scanningState: some View {
-        VStack(spacing: 14) {
-            ProgressView()
-                .controlSize(.large)
-            Text(finder.progressText.isEmpty ? "正在扫描…" : finder.progressText)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            ProgressView(value: finder.progressValue)
-                .frame(width: 320)
-            Text("先按体积初筛，再做内容哈希 —— 只有真正相同的文件才会被列出")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+        VStack(spacing: 0) {
+            VStack(spacing: 16) {
+                HStack(spacing: 10) {
+                    Image(systemName: "sparkles")
+                        .font(.ppg(20, .black))
+                        .foregroundStyle(PPG.blossom)
+                    Text(finder.progressText.isEmpty ? "正在扫描…" : finder.progressText)
+                        .font(.ppg(20, .black))
+                        .foregroundStyle(PPG.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 10)
+                    Text("\(Int(finder.progressValue * 100))%")
+                        .font(.ppg(20, .black))
+                        .foregroundStyle(PPG.ink.opacity(0.5))
+                        .monospacedDigit()
+                }
+
+                ComicProgressBar(value: finder.progressValue,
+                                 tint: PPG.blossom, height: 20, striped: true)
+
+                Text("先按体积初筛，再做内容哈希 —— 只有真正相同的文件才会被列出")
+                    .font(.ppgBody)
+                    .foregroundStyle(PPG.ink.opacity(0.6))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .comicCard(tint: PPG.blossom, padding: 22)
+            .frame(maxWidth: 620)
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "doc.on.doc")
-                .font(.system(size: 44))
-                .foregroundStyle(.tertiary)
-            Text("还没有扫描过")
-                .font(.title3)
-            Text("点击右上角「开始扫描」，在 \(finder.roots.count) 个位置查找内容相同的文件")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ComicEmptyState(
+            icon: "doc.on.doc",
+            title: "还没有扫描过",
+            message: "点击右上角「开始扫描」，在 \(finder.roots.count) 个位置查找内容相同的文件",
+            tint: PPG.bubbles,
+            action: (title: "开始扫描", handler: { finder.startScan() })
+        )
+        .padding(20)
     }
 
     private var noResultState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 44))
-                .foregroundStyle(.green)
-            Text("未发现重复文件")
-                .font(.title3)
-            Text("扫描范围内没有内容完全相同的文件（已跳过 1 MB 以下的）")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ComicEmptyState(
+            icon: "checkmark.circle",
+            title: "未发现重复文件",
+            message: "扫描范围内没有内容完全相同的文件（已跳过 1 MB 以下的）",
+            tint: PPG.buttercup
+        )
+        .padding(20)
     }
 
     // MARK: - 结果列表
@@ -187,39 +214,38 @@ struct DuplicateView: View {
     private var resultList: some View {
         VStack(spacing: 0) {
             summaryBar
-            Divider()
+                .padding(16)
 
             ScrollView {
-                LazyVStack(spacing: 10) {
+                LazyVStack(spacing: 12) {
                     ForEach(Array(finder.groups.enumerated()), id: \.element.id) { gi, group in
                         groupCard(gi: gi, group: group)
                     }
                 }
-                .padding(16)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 18)
             }
         }
     }
 
     private var summaryBar: some View {
-        HStack(spacing: 16) {
-            Label("\(finder.groups.count) 组重复", systemImage: "square.stack.3d.up")
-                .font(.callout)
+        HStack(spacing: 10) {
+            ComicBadge(text: "\(finder.groups.count) 组重复",
+                       tint: PPG.grape, icon: "square.stack.3d.up.fill")
 
-            Text("可回收 \(Fmt.size(finder.groups.reduce(0) { $0 + $1.reclaimable }))")
-                .font(.callout)
-                .foregroundStyle(.orange)
+            ComicBadge(text: "可回收 \(Fmt.size(finder.groups.reduce(0) { $0 + $1.reclaimable }))",
+                       tint: PPG.sunny, icon: "arrow.down.circle.fill")
 
             if finder.selectedCount > 0 {
-                Text("已选 \(finder.selectedCount) 项 · \(Fmt.size(finder.selectedSize))")
-                    .font(.callout)
-                    .foregroundStyle(.blue)
+                ComicBadge(text: "已选 \(finder.selectedCount) 项 · \(Fmt.size(finder.selectedSize))",
+                           tint: PPG.blossom, icon: "checkmark.circle.fill")
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             // 批量勾选：这是唯一会批量选中删除项的地方，规则明确写在菜单项上。
-            // 必须显式指定 menuStyle/buttonStyle —— 默认样式会渲染成带蓝色箭头的
-            // 强调控件，在一排普通按钮里显得像「已激活」，容易被误认成当前状态。
+            // 用 ComicMenuStyle 而非 buttonStyle —— macOS 上 Menu 只认 MenuStyle，
+            // 套 ButtonStyle 会被忽略并退化成裸系统控件（已实测，见 PPGControls）。
             Menu {
                 ForEach(DuplicateFinder.KeepPolicy.allCases) { p in
                     Button("每组\(p.title)，其余勾选删除") {
@@ -232,68 +258,72 @@ struct DuplicateView: View {
             } label: {
                 Label("批量勾选", systemImage: "checklist")
             }
-            .menuStyle(.borderlessButton)
-            .buttonStyle(.bordered)
-            .fixedSize()
+            .menuStyle(ComicMenuStyle(tint: PPG.bubbles, size: .regular))
 
             Button {
                 showCleanConfirm = true
             } label: {
-                Label("清理所选", systemImage: "trash")
+                Label("清理所选", systemImage: "trash.fill")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
+            .buttonStyle(ComicButtonStyle(tint: PPG.dangerDeep, size: .regular,
+                                          textColor: .white))
             .disabled(finder.selectedCount == 0)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .comicCard(tint: PPG.bubbles, padding: 12)
     }
 
     private func groupCard(gi: Int, group: DuplicateFinder.DuplicateGroup) -> some View {
         let expanded = expandedGroups.contains(group.id)
+        // 按组在列表里的固定序号循环取主角色，不用 hashValue
+        let tint = PPG.girl(gi)
 
         return VStack(spacing: 0) {
-            // 组头
-            HStack(spacing: 10) {
-                Button {
-                    if expanded { expandedGroups.remove(group.id) }
-                    else { expandedGroups.insert(group.id) }
-                } label: {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 14)
-                }
-                .buttonStyle(.plain)
+            // 组头：整行可点，用来展开 / 收起
+            HStack(spacing: 11) {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.ppg(11, .black))
+                    .foregroundStyle(PPG.ink)
+                    .frame(width: 14)
 
-                Image(systemName: "square.on.square")
-                    .foregroundStyle(.blue)
+                ZStack {
+                    Circle()
+                        .fill(tint)
+                        .overlay { Circle().strokeBorder(PPG.ink, lineWidth: 1.8) }
+                        .frame(width: 28, height: 28)
+                    Image(systemName: "square.on.square")
+                        .font(.ppg(12.5, .black))
+                        .foregroundStyle(PPG.ink)
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(group.files.count) 个相同文件 · 每个 \(Fmt.size(group.size))")
-                        .font(.callout.weight(.medium))
+                        .font(.ppg(13.5, .heavy))
+                        .foregroundStyle(PPG.ink)
                     Text(group.files[0].name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.ppg(11, .medium))
+                        .foregroundStyle(PPG.ink.opacity(0.5))
                         .lineLimit(1)
+                        .truncationMode(.middle)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                Text("可回收 \(Fmt.size(group.reclaimable))")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.orange)
-                    .monospacedDigit()
+                ComicBadge(text: "可回收 \(Fmt.size(group.reclaimable))",
+                           tint: PPG.sunny, icon: "arrow.down.circle.fill")
 
                 Button("仅看此组") {
                     finder.clearSelection()
                     selectAllButFirst(gi: gi)
                 }
-                .font(.caption)
-                .buttonStyle(.link)
+                .buttonStyle(ComicButtonStyle(tint: tint, size: .regular, burst: false))
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            .frame(minHeight: 52)
+            .background {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(tint.opacity(expanded ? 0.26 : 0.14))
+            }
             .contentShape(Rectangle())
             .onTapGesture {
                 if expanded { expandedGroups.remove(group.id) }
@@ -301,22 +331,22 @@ struct DuplicateView: View {
             }
 
             if expanded {
-                Divider()
-                VStack(spacing: 0) {
+                Rectangle()
+                    .fill(PPG.ink.opacity(0.16))
+                    .frame(height: 1.5)
+                    .padding(.horizontal, 10)
+
+                VStack(spacing: 3) {
                     ForEach(Array(group.files.enumerated()), id: \.element.id) { fi, file in
                         fileRow(gi: gi, fi: fi, file: file, isFirst: fi == 0)
-                        if fi != group.files.count - 1 {
-                            Divider().padding(.leading, 42)
-                        }
                     }
                 }
+                .padding(.top, 7)
+                .padding(.bottom, 4)
+                .padding(.horizontal, 6)
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.secondary.opacity(0.15), lineWidth: 1)
-        )
+        .comicCard(tint: tint, padding: 0)
     }
 
     /// 勾选本组除第一个之外的所有副本
@@ -333,58 +363,63 @@ struct DuplicateView: View {
         file: DuplicateFinder.FileEntry,
         isFirst: Bool
     ) -> some View {
-        HStack(spacing: 10) {
-            Toggle("", isOn: Binding(
-                get: { file.isSelected },
-                set: { _ in finder.toggle(groupIndex: gi, fileIndex: fi) }
-            ))
-            .labelsHidden()
-            .toggleStyle(.checkbox)
+        // 与所属组同一主角色配色，序号仍然来自列表位置而非 hashValue
+        let tint = PPG.girl(gi)
+
+        return HStack(spacing: 11) {
+            ComicCheckbox(isOn: file.isSelected,
+                          tint: isFirst ? PPG.buttercup : tint) {
+                finder.toggle(groupIndex: gi, fileIndex: fi)
+            }
 
             Image(systemName: iconFor(file.url))
-                .foregroundStyle(isFirst ? Color.green : Color.secondary)
-                .frame(width: 18)
+                .font(.ppg(13, .black))
+                .foregroundStyle(isFirst ? PPG.ink : PPG.ink.opacity(0.5))
+                .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(file.name)
-                        .font(.callout)
+                        .font(.ppg(13, .bold))
+                        .foregroundStyle(PPG.ink)
                         .lineLimit(1)
                     if isFirst {
-                        Text("保留")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Color.green.opacity(0.18), in: Capsule())
-                            .foregroundStyle(.green)
+                        ComicBadge(text: "保留", tint: PPG.buttercup, icon: "lock.fill")
                     }
                 }
                 Text(file.parentPath)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.ppg(10.5, .medium))
+                    .foregroundStyle(PPG.ink.opacity(0.45))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
 
-            Spacer()
+            Spacer(minLength: 6)
 
             Text(file.modified.formatted(date: .numeric, time: .omitted))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .font(.ppgCaption)
+                .foregroundStyle(PPG.ink.opacity(0.45))
                 .monospacedDigit()
 
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([file.url])
             } label: {
-                Image(systemName: "folder")
-                    .font(.caption)
+                Image(systemName: "folder.fill")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .buttonStyle(ComicIconButtonStyle(tint: PPG.sunny, diameter: 32))
             .help("在访达中显示")
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 11)
         .padding(.vertical, 7)
+        .background {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(file.isSelected ? tint.opacity(0.2) : PPG.ink.opacity(0.04))
+        }
+        // 整行可点：命中区从 26pt 的勾选框扩大到整行
+        .contentShape(Rectangle())
+        .onTapGesture {
+            finder.toggle(groupIndex: gi, fileIndex: fi)
+        }
     }
 
     /// 按扩展名给个图标，纯装饰

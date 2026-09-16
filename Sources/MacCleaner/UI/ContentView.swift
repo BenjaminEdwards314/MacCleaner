@@ -34,6 +34,10 @@ struct ContentView: View {
     @State private var section: Section = Section.initialFromLaunchArguments
     /// 待清理项，由各子视图通过 onClean 回调提交
     @State private var pendingClean: PendingClean?
+    /// 清理成功后的庆祝动画数据。nil 表示不显示。
+    @State private var celebration: (freed: Int64, count: Int)?
+    /// 庆祝动画关闭后需要补报的失败详情（部分失败时才非空）
+    @State private var deferredFailureText: String?
 
     /// 每个子视图提交的清理请求。grant 决定安全护栏放行到哪一档。
     private struct PendingClean {
@@ -113,7 +117,7 @@ struct ContentView: View {
                     bottomBar
                 }
             }
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(PPG.backdrop)
             .navigationTitle(section.title)
         }
         .alert("确认清理", isPresented: $showConfirm) {
@@ -127,9 +131,35 @@ struct ContentView: View {
         } message: {
             Text(resultText)
         }
+        .overlay {
+            if let c = celebration {
+                CleanCelebrationView(freed: c.freed, count: c.count) {
+                    celebration = nil
+                    // 如果有部分失败，庆祝完再把详情报出来，
+                    // 免得失败信息被庆祝动画盖掉、用户以为全都成功了。
+                    if let deferred = deferredFailureText {
+                        deferredFailureText = nil
+                        resultText = deferred
+                        showResult = true
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: celebration == nil)
         .task {
             // 调试/验证入口：`--autoscan` 启动后自动触发当前页面的扫描。
             // 与 --section 配合，可无人值守地把每个页面的「有数据」状态截图核对。
+            // `--demo-celebration` 直接展示清理完成动画。
+            // 庆祝动画只在真实清理成功（freed > 0）后出现，而 macOS 在未授予
+            // 辅助功能权限时会拦截合成点击，无法脚本触发清理。加这个入口才能
+            // 截图核对动画效果，与 --section/--autoscan 同类，不影响正常启动。
+            if CommandLine.arguments.contains("--demo-celebration") {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                celebration = (4_820_000_000, 37)
+                return
+            }
+
             guard CommandLine.arguments.contains("--autoscan") else { return }
             try? await Task.sleep(nanoseconds: 800_000_000)
             switch section {
@@ -145,57 +175,158 @@ struct ContentView: View {
     // MARK: - 侧边栏
 
     private var sidebar: some View {
-        List(selection: $section) {
-            ForEach(["存储", "系统", "工具"], id: \.self) { group in
-                SwiftUI.Section(group) {
-                    ForEach(Section.allCases.filter { $0.group == group }) { s in
-                        Label(s.title, systemImage: s.symbol)
-                            .tag(s)
+        VStack(spacing: 0) {
+            // 顶部品牌区
+            sidebarBrand
+            Divider().overlay(PPG.ink.opacity(0.25))
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(["存储", "系统", "工具"], id: \.self) { group in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(group)
+                                .font(.ppg(11, .black))
+                                .foregroundStyle(PPG.ink.opacity(0.45))
+                                .padding(.horizontal, 12)
+
+                            ForEach(Section.allCases.filter { $0.group == group }) { item in
+                                sidebarRow(item)
+                            }
+                        }
                     }
                 }
+                .padding(.vertical, 12)
             }
         }
-        .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
-        .safeAreaInset(edge: .bottom) {
-            sidebarFooter
+        .background(PPG.sidebarBackdrop)
+        .navigationSplitViewColumnWidth(min: 208, ideal: 226, max: 260)
+        .safeAreaInset(edge: .bottom) { sidebarFooter }
+    }
+
+    /// 侧边栏顶部：星形徽标 + 应用名
+    private var sidebarBrand: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                StarburstShape(points: 12, innerRatio: 0.7)
+                    .fill(PPG.sunny)
+                    .overlay {
+                        StarburstShape(points: 12, innerRatio: 0.7)
+                            .stroke(PPG.ink, lineWidth: 2)
+                    }
+                    .frame(width: 36, height: 36)
+                Image(systemName: "sparkles")
+                    .font(.ppg(15, .black))
+                    .foregroundStyle(PPG.ink)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("MacCleaner")
+                    .font(.ppg(15, .black))
+                    .foregroundStyle(PPG.ink)
+                Text("磁盘与内存清理")
+                    .font(.ppg(10, .bold))
+                    .foregroundStyle(PPG.ink.opacity(0.5))
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .background {
+            HalftoneDots(spacing: 8, dot: 1.8, opacity: 0.05)
         }
     }
 
-    /// 侧边栏底部：显示当前磁盘占用，给用户一个全局参照
+    /// 单个导航项。用 Button 而非 List 行 —— 自绘才能做出按下回弹和选中态描边。
+    private func sidebarRow(_ item: Section) -> some View {
+        let isSel = section == item
+        let tint = PPG.girl(Section.allCases.firstIndex(of: item) ?? 0)
+
+        return Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                section = item
+            }
+        } label: {
+            HStack(spacing: 10) {
+                // 图标放在圆形色块里，选中时填充主角色
+                ZStack {
+                    Circle()
+                        .fill(isSel ? tint : PPG.cream)
+                        .overlay {
+                            Circle().strokeBorder(
+                                isSel ? PPG.ink : PPG.ink.opacity(0.28),
+                                lineWidth: isSel ? 2.2 : 1.6
+                            )
+                        }
+                        .frame(width: 27, height: 27)
+                    Image(systemName: item.symbol)
+                        .font(.ppg(12.5, .black))
+                        .foregroundStyle(PPG.ink.opacity(isSel ? 1 : 0.62))
+                }
+
+                Text(item.title)
+                    .font(.ppg(13.5, isSel ? .black : .semibold))
+                    .foregroundStyle(PPG.ink.opacity(isSel ? 1 : 0.72))
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if isSel {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(tint.opacity(0.42))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(PPG.ink, lineWidth: 2.2)
+                        }
+                        .background {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .fill(PPG.ink.opacity(0.8))
+                                .offset(x: 2.5, y: 2.5)
+                        }
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SidebarRowStyle())
+        .padding(.horizontal, 8)
+    }
+
     private var sidebarFooter: some View {
         let v = scanner.volume
-        return VStack(alignment: .leading, spacing: 6) {
-            Divider()
+        let frac = min(max(v.usedFraction, 0), 1)
+        // 超过 90% 转红，给一个明确的视觉警示
+        let tint = frac > 0.9 ? PPG.danger : (frac > 0.75 ? PPG.sunny : PPG.buttercup)
+
+        return VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Image(systemName: "internaldrive")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Image(systemName: "internaldrive.fill")
+                    .font(.ppg(11, .black))
+                    .foregroundStyle(tint)
                 Text("\(Fmt.size(v.free)) 可用")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.ppg(12.5, .heavy))
+                    .foregroundStyle(PPG.ink)
                     .monospacedDigit()
             }
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.secondary.opacity(0.15))
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(v.usedFraction > 0.9 ? Color.red : Color.accentColor)
-                        .frame(width: max(2, geo.size.width * CGFloat(min(v.usedFraction, 1))))
-                }
-            }
-            .frame(height: 5)
+            ComicProgressBar(value: frac, tint: tint, height: 12)
 
             Text("共 \(Fmt.size(v.total))")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .font(.ppg(10.5, .semibold))
+                .foregroundStyle(PPG.ink.opacity(0.45))
                 .monospacedDigit()
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 10)
-        .background(.bar)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .background {
+            PPG.cream.opacity(0.92)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(PPG.ink.opacity(0.2)).frame(height: 1.5)
+                }
+        }
     }
 
     // MARK: - 内容分发
@@ -264,16 +395,24 @@ struct ContentView: View {
 
     private var cleanToolbar: some View {
         HStack(spacing: 12) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(.blue)
+            ZStack {
+                Circle().fill(PPG.sunny)
+                    .overlay { Circle().strokeBorder(PPG.ink, lineWidth: 2) }
+                    .frame(width: 30, height: 30)
+                Image(systemName: "sparkles")
+                    .font(.ppg(13, .black))
+                    .foregroundStyle(PPG.ink)
+            }
+
             Text("扫描缓存、日志与开发残留")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(.ppgBody)
+                .foregroundStyle(PPG.ink.opacity(0.7))
 
             Spacer()
 
             if scanner.isScanning {
                 Button("取消") { scanner.cancel() }
+                    .buttonStyle(ComicButtonStyle(tint: PPG.danger, size: .regular))
             } else {
                 Button {
                     selection.removeAll()
@@ -282,6 +421,7 @@ struct ContentView: View {
                 } label: {
                     Label("快速扫描", systemImage: "bolt.fill")
                 }
+                .buttonStyle(ComicButtonStyle(tint: PPG.sunny, size: .regular))
 
                 Button {
                     selection.removeAll()
@@ -290,50 +430,68 @@ struct ContentView: View {
                 } label: {
                     Label("深度扫描", systemImage: "magnifyingglass")
                 }
+                .buttonStyle(ComicButtonStyle(tint: PPG.bubbles, size: .regular))
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 13)
+        .background {
+            PPG.cream.opacity(0.75)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(PPG.ink.opacity(0.18)).frame(height: 1.5)
+                }
+        }
     }
 
     // MARK: - 卡片
 
     private var scanningCard: some View {
-        VStack(spacing: 12) {
-            ProgressView(value: scanner.progressValue)
-                .progressViewStyle(.linear)
+        VStack(spacing: 16) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.ppg(20, .black))
+                    .foregroundStyle(PPG.blossom)
+                Text("正在扫描…")
+                    .font(.ppg(20, .black))
+                    .foregroundStyle(PPG.ink)
+                Spacer()
+                Text("\(Int(scanner.progressValue * 100))%")
+                    .font(.ppg(20, .black))
+                    .foregroundStyle(PPG.ink.opacity(0.5))
+                    .monospacedDigit()
+            }
+
+            ComicProgressBar(value: scanner.progressValue,
+                             tint: PPG.blossom, height: 20, striped: true)
+
             Text(scanner.progressText)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(.ppgBody)
+                .foregroundStyle(PPG.ink.opacity(0.6))
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(40)
-        .frame(maxWidth: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .comicCard(tint: PPG.blossom, padding: 22)
     }
 
     private var emptyCard: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "internaldrive")
-                .font(.system(size: 34))
-                .foregroundStyle(.tertiary)
-            Text("点击「快速扫描」开始检查")
-                .foregroundStyle(.secondary)
-            Text("快速扫描检查常见缓存与日志；深度扫描额外查找大文件，耗时更长。")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .padding(50)
-        .frame(maxWidth: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        ComicEmptyState(
+            icon: "internaldrive",
+            title: "准备就绪",
+            message: "快速扫描检查常见缓存与日志；深度扫描额外查找大文件，耗时更长。",
+            tint: PPG.bubbles
+        )
+        .comicCard(tint: PPG.bubbles, padding: 10)
     }
 
     // MARK: - 底栏
 
     private var bottomBar: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             if isCleaning {
                 ProgressView().controlSize(.small)
-                Text(cleanProgress).font(.callout).foregroundStyle(.secondary)
+                Text(cleanProgress)
+                    .font(.ppgBody)
+                    .foregroundStyle(PPG.ink.opacity(0.7))
+                Spacer()
             } else {
                 Button("全选安全项") {
                     // 按 defaultSelected 而非 risk 来选。
@@ -341,28 +499,38 @@ struct ContentView: View {
                     // 而旧逻辑只认 .safe，会漏掉真正的大头、勾上 112KB 的小文件。
                     selection = Set(allItems.filter { $0.defaultSelected && $0.risk != .dangerous }.map(\.id))
                 }
+                .buttonStyle(ComicButtonStyle(tint: PPG.buttercup, size: .regular, burst: false))
+
                 Button("清空选择") { selection.removeAll() }
+                    .buttonStyle(ComicButtonStyle(tint: PPG.cream, size: .regular,
+                                                  burst: false, outlined: true))
 
                 Spacer()
 
                 if !selection.isEmpty {
-                    Text("已选 \(selectedItems.count) 项 · \(Fmt.size(selectedSize))")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    ComicBadge(text: "已选 \(selectedItems.count) 项 · \(Fmt.size(selectedSize))",
+                               tint: PPG.sunny, icon: "checkmark.circle.fill")
                 }
 
                 Button {
                     showConfirm = true
                 } label: {
-                    Label("清理所选", systemImage: "trash")
+                    Label("清理所选", systemImage: "trash.fill")
                 }
+                .buttonStyle(ComicButtonStyle(tint: PPG.dangerDeep, size: .large,
+                                              textColor: .white))
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(selection.isEmpty)
-                .buttonStyle(.borderedProminent)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 13)
+        .background {
+            PPG.cream.opacity(0.9)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(PPG.ink.opacity(0.18)).frame(height: 1.5)
+                }
+        }
     }
 
     // MARK: - 执行
@@ -433,8 +601,20 @@ struct ContentView: View {
                 if outcome.deleted > 0 {
                     msg += "\n\n内容已移入废纸篓，可随时恢复。"
                 }
-                resultText = msg
-                showResult = true
+                // 成功（有实际释放）走庆祝动画；否则弹 alert 说明为什么没删掉。
+                // 全部失败时绝不能庆祝 —— 那等于给一次失败鼓掌。
+                if outcome.freed > 0 && outcome.deleted > 0 {
+                    if outcome.failures.isEmpty {
+                        celebration = (outcome.freed, outcome.deleted)
+                    } else {
+                        // 部分成功：先庆祝，失败详情留到庆祝关闭后再报
+                        deferredFailureText = msg
+                        celebration = (outcome.freed, outcome.deleted)
+                    }
+                } else {
+                    resultText = msg
+                    showResult = true
+                }
 
                 // 刷新受影响的数据源
                 if grant == nil {

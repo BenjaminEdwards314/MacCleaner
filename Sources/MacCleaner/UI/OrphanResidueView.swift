@@ -29,7 +29,7 @@ struct OrphanResidueView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            Divider()
+            Divider().overlay(PPG.ink.opacity(0.18))
 
             if scanner.isScanning {
                 scanningState
@@ -62,166 +62,229 @@ struct OrphanResidueView: View {
     // MARK: - 顶部
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "questionmark.folder")
-                .font(.title2)
-                .foregroundStyle(.orange)
+        VStack(spacing: 0) {
+            ComicSectionHeader(
+                "卸载残余", icon: "questionmark.folder", tint: PPG.grape,
+                trailing: AnyView(
+                    HStack(spacing: 10) {
+                        if !scanner.groups.isEmpty {
+                            ComicBadge(
+                                text: "\(scanner.groups.count) 个来源 · \(scanner.itemCount) 项 · \(Fmt.size(scanner.totalSize))",
+                                tint: PPG.sunny, icon: "shippingbox.fill"
+                            )
+                        }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("卸载残余")
-                    .font(.headline)
-                Text("找出已删除应用留在 ~/Library 里的无主文件")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+                        Button {
+                            checked.removeAll()
+                            scanner.startScan()
+                        } label: {
+                            Label(scanner.hasScanned ? "重新扫描" : "开始扫描",
+                                  systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(ComicButtonStyle(tint: PPG.sunny, size: .regular))
+                        .disabled(scanner.isScanning)
+                    }
+                )
+            )
+            .padding(.horizontal, 20)
+            .padding(.top, 15)
 
-            Spacer()
-
-            if !scanner.groups.isEmpty {
-                Text("\(scanner.groups.count) 个来源 · \(scanner.itemCount) 项 · \(Fmt.size(scanner.totalSize))")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Button {
-                checked.removeAll()
-                scanner.startScan()
-            } label: {
-                Label(scanner.hasScanned ? "重新扫描" : "开始扫描", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(scanner.isScanning)
+            Text("找出已删除应用留在 ~/Library 里的无主文件")
+                .font(.ppgBody)
+                .foregroundStyle(PPG.ink.opacity(0.6))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.top, 5)
+                .padding(.bottom, 14)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .background {
+            PPG.cream.opacity(0.75)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(PPG.ink.opacity(0.18)).frame(height: 1.5)
+                }
+        }
     }
 
     // MARK: - 各种状态
 
     private var scanningState: some View {
-        VStack(spacing: 14) {
-            ProgressView()
-            Text(scanner.progressText.isEmpty ? "正在扫描…" : scanner.progressText)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            Text("会先读取所有已安装应用的内部标识，再比对 ~/Library 中的文件")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+        VStack(spacing: 0) {
+            VStack(spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "sparkles")
+                        .font(.ppg(20, .black))
+                        .foregroundStyle(PPG.grape)
+                    Text(scanner.progressText.isEmpty ? "正在扫描…" : scanner.progressText)
+                        .font(.ppg(20, .black))
+                        .foregroundStyle(PPG.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 10)
+                    ProgressView().controlSize(.small)
+                }
+
+                Text("会先读取所有已安装应用的内部标识，再比对 ~/Library 中的文件")
+                    .font(.ppgBody)
+                    .foregroundStyle(PPG.ink.opacity(0.6))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .comicCard(tint: PPG.grape, padding: 22)
+            .frame(maxWidth: 620)
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "questionmark.folder")
-                .font(.system(size: 52))
-                .foregroundStyle(.tertiary)
-            Text("还没有扫描过")
-                .font(.title3.weight(.medium))
-            Text("点击「开始扫描」，找出已被卸载但仍在占用空间的文件")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ComicEmptyState(
+            icon: "questionmark.folder",
+            title: "还没有扫描过",
+            message: "点击「开始扫描」，找出已被卸载但仍在占用空间的文件",
+            tint: PPG.grape,
+            action: (title: "开始扫描", handler: {
+                checked.removeAll()
+                scanner.startScan()
+            })
+        )
+        .padding(20)
     }
 
     private var nothingFoundState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 52))
-                .foregroundStyle(.green)
-            Text("没有发现卸载残余")
-                .font(.title3.weight(.medium))
-            Text("已比对了 \(scanner.knownIDCount) 个应用标识，~/Library 中没有无主文件")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ComicEmptyState(
+            icon: "checkmark.circle",
+            title: "没有发现卸载残余",
+            message: "已比对了 \(scanner.knownIDCount) 个应用标识，~/Library 中没有无主文件",
+            tint: PPG.buttercup
+        )
+        .padding(20)
     }
 
     // MARK: - 左侧：来源列表
 
     private var vendorList: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 7) {
                 ForEach(scanner.groups) { group in
                     vendorRow(group)
                 }
             }
+            .padding(10)
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.4))
     }
 
     private func vendorRow(_ group: OrphanGroup) -> some View {
         let isSel = selectedGroup?.vendor == group.vendor
         let allChecked = group.items.allSatisfy { checked.contains($0.id) }
+        // 按来源在列表里的固定序号循环取主角色，不用 hashValue
+        let idx = scanner.groups.firstIndex { $0.vendor == group.vendor } ?? 0
+        let tint = PPG.girl(idx)
 
         return Button {
-            selectedVendor = group.vendor
+            withAnimation(.spring(response: 0.26, dampingFraction: 0.75)) {
+                selectedVendor = group.vendor
+            }
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: allChecked ? "checkmark.circle.fill" : "circle.dashed")
-                    .foregroundStyle(allChecked ? .orange : .secondary)
-                    .font(.callout)
+                // 已勾选状态放进圆形色块，比裸图标更醒目
+                ZStack {
+                    Circle()
+                        .fill(allChecked ? tint : PPG.cream)
+                        .overlay {
+                            Circle().strokeBorder(
+                                allChecked ? PPG.ink : PPG.ink.opacity(0.3),
+                                lineWidth: allChecked ? 2.2 : 1.6
+                            )
+                        }
+                        .frame(width: 26, height: 26)
+                    Image(systemName: allChecked ? "checkmark.circle.fill" : "circle.dashed")
+                        .font(.ppg(12, .black))
+                        .foregroundStyle(PPG.ink.opacity(allChecked ? 1 : 0.55))
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(group.vendor)
-                        .font(.callout.weight(.medium))
+                        .font(.ppg(13.5, isSel ? .black : .bold))
+                        .foregroundStyle(PPG.ink)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text("\(group.items.count) 项")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.ppgCaption)
+                        .foregroundStyle(PPG.ink.opacity(0.5))
                 }
 
-                Spacer()
+                Spacer(minLength: 6)
 
                 Text(Fmt.size(group.totalSize))
-                    .font(.callout)
+                    .font(.ppg(12.5, .heavy))
+                    .foregroundStyle(PPG.ink.opacity(isSel ? 1 : 0.62))
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 9)
             .padding(.vertical, 9)
-            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                // 选中态：主角色填充 + 黑描边 + 硬阴影（与侧边栏导航一致）
+                if isSel {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(tint.opacity(0.34))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(PPG.ink, lineWidth: 2.2)
+                        }
+                        .background {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .fill(PPG.ink.opacity(0.8))
+                                .offset(x: 2.5, y: 2.5)
+                        }
+                } else {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(PPG.ink.opacity(0.04))
+                }
+            }
             .contentShape(Rectangle())
-            .background(isSel ? Color.accentColor.opacity(0.16) : Color.clear)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SidebarRowStyle())
     }
 
     // MARK: - 右侧：明细
 
     private var detailPane: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 18) {
                 if let g = selectedGroup {
                     detailHeader(g)
-                    Divider().padding(.vertical, 12)
                     itemList(g)
-                    Divider().padding(.vertical, 12)
                     limitationsNote
                 }
             }
             .padding(20)
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.25))
     }
 
     private func detailHeader(_ g: OrphanGroup) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "questionmark.folder")
-                    .font(.system(size: 34))
-                    .foregroundStyle(.orange)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(g.vendor)
-                        .font(.title2.weight(.semibold))
-                    Text("未找到对应的已安装应用")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                ZStack {
+                    Circle()
+                        .fill(PPG.grape)
+                        .overlay { Circle().strokeBorder(PPG.ink, lineWidth: 2.2) }
+                        .frame(width: 46, height: 46)
+                    Image(systemName: "questionmark.folder")
+                        .font(.ppg(20, .black))
+                        .foregroundStyle(PPG.ink)
                 }
-                Spacer()
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(g.vendor)
+                        .font(.ppg(21, .black))
+                        .foregroundStyle(PPG.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    ComicBadge(text: "未找到对应的已安装应用",
+                               tint: PPG.danger, icon: "exclamationmark.triangle.fill")
+                }
+                Spacer(minLength: 8)
             }
 
             HStack(spacing: 10) {
@@ -231,7 +294,7 @@ struct OrphanResidueView: View {
                     Label(allChecked(g) ? "取消全选" : "全选此项",
                           systemImage: allChecked(g) ? "circle.dashed" : "checkmark.circle")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(ComicButtonStyle(tint: PPG.buttercup, size: .regular))
 
                 Button {
                     let items = g.items
@@ -251,91 +314,114 @@ struct OrphanResidueView: View {
                         """
                     )
                 } label: {
-                    Label("清理勾选的 \(checkedFor(g)) 项", systemImage: "trash")
+                    Label("清理勾选的 \(checkedFor(g)) 项", systemImage: "trash.fill")
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
+                // 破坏性操作：红底白字，与「移入废纸篓」的语义对齐
+                .buttonStyle(ComicButtonStyle(tint: PPG.dangerDeep, size: .large,
+                                              textColor: .white))
                 .disabled(checkedFor(g) == 0)
+
+                Spacer(minLength: 0)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .comicCard(tint: PPG.grape, padding: 16)
     }
 
     private func itemList(_ g: OrphanGroup) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("残余文件")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 10) {
+            ComicSectionHeader(
+                "残余文件", icon: "shippingbox", tint: PPG.buttercup,
+                trailing: AnyView(
+                    ComicBadge(text: "\(checkedFor(g)) / \(g.items.count) 项已勾选",
+                               tint: PPG.sunny, icon: "checkmark.circle.fill")
+                )
+            )
 
-            ForEach(g.items) { item in
-                HStack(spacing: 10) {
-                    Button {
-                        if checked.contains(item.id) { checked.remove(item.id) }
-                        else { checked.insert(item.id) }
-                    } label: {
-                        Image(systemName: checked.contains(item.id) ? "checkmark.square.fill" : "square")
-                            .foregroundStyle(checked.contains(item.id) ? .orange : .secondary)
-                    }
-                    .buttonStyle(.plain)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.name)
-                            .font(.callout)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Text("~/Library/\(item.kind)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    if let m = item.modified {
-                        Text(m, format: .dateTime.year().month().day())
-                            .font(.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    Text(Fmt.size(item.size))
-                        .font(.callout)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-
-                    Button {
-                        NSWorkspace.shared.activateFileViewerSelecting([item.url])
-                    } label: {
-                        Image(systemName: "folder")
-                    }
-                    .buttonStyle(.plain)
-                    .help("在访达中显示")
+            VStack(spacing: 3) {
+                ForEach(Array(g.items.enumerated()), id: \.element.id) { ri, item in
+                    itemRow(item, tint: PPG.girl(ri))
                 }
-                .padding(.vertical, 7)
-                .padding(.horizontal, 8)
-                .background(Color.secondary.opacity(0.045))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .comicCard(tint: PPG.buttercup, padding: 12)
+    }
+
+    private func itemRow(_ item: OrphanItem, tint: Color) -> some View {
+        let on = checked.contains(item.id)
+
+        return HStack(spacing: 11) {
+            ComicCheckbox(isOn: on, tint: tint) {
+                if on { checked.remove(item.id) } else { checked.insert(item.id) }
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.name)
+                    .font(.ppg(13, .bold))
+                    .foregroundStyle(PPG.ink)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("~/Library/\(item.kind)")
+                    .font(.ppg(10.5, .medium))
+                    .foregroundStyle(PPG.ink.opacity(0.45))
+            }
+
+            Spacer(minLength: 6)
+
+            if let m = item.modified {
+                Text(m, format: .dateTime.year().month().day())
+                    .font(.ppgCaption)
+                    .foregroundStyle(PPG.ink.opacity(0.45))
+                    .monospacedDigit()
+            }
+
+            Text(Fmt.size(item.size))
+                .font(.ppg(12.5, .heavy))
+                .foregroundStyle(PPG.ink)
+                .monospacedDigit()
+                .frame(width: 74, alignment: .trailing)
+
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([item.url])
+            } label: {
+                Image(systemName: "folder.fill")
+            }
+            .buttonStyle(ComicIconButtonStyle(tint: PPG.sunny, diameter: 32))
+            .help("在访达中显示")
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(on ? tint.opacity(0.2) : PPG.ink.opacity(0.04))
+        }
+        // 整行可点：命中区从勾选框扩大到整行
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if on { checked.remove(item.id) } else { checked.insert(item.id) }
         }
     }
 
     private var limitationsNote: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("判定依据与限制", systemImage: "info.circle")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            ComicSectionHeader("判定依据与限制", icon: "info.circle", tint: PPG.sunny)
 
             Text("• 判定方式是「该标识不被任何已安装应用引用」。会读取每个应用**内部**的全部标识，以及它在 entitlements 里声明的 group container（实测本机共 \(scanner.knownIDCount) 个）—— 只比对顶层标识会大量误判。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.ppgCaption)
+                .foregroundStyle(PPG.ink.opacity(0.6))
+                .fixedSize(horizontal: false, vertical: true)
             Text("• 同时要求 30 天内未被访问，作为最后一道保守兜底。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.ppgCaption)
+                .foregroundStyle(PPG.ink.opacity(0.6))
+                .fixedSize(horizontal: false, vertical: true)
             Text("• 只移入废纸篓，不提供永久删除。删错了可以从废纸篓取回。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.ppgCaption)
+                .foregroundStyle(PPG.ink.opacity(0.6))
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .comicCard(tint: PPG.sunny, padding: 14)
     }
 
     // MARK: - 辅助

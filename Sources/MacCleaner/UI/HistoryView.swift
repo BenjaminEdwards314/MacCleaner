@@ -12,7 +12,7 @@ struct HistoryView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            Divider()
+            Divider().overlay(PPG.ink.opacity(0.2))
 
             if history.records.isEmpty {
                 emptyState
@@ -39,45 +39,46 @@ struct HistoryView: View {
     // MARK: - 顶部
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "chart.bar.xaxis")
-                .font(.title2)
-                .foregroundStyle(.green)
+        VStack(alignment: .leading, spacing: 5) {
+            ComicSectionHeader(
+                "清理历史",
+                icon: "chart.bar.xaxis",
+                tint: PPG.buttercup,
+                trailing: AnyView(clearHistoryButton)
+            )
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("清理历史")
-                    .font(.headline)
-                Text("累计释放量与趋势，只记录体积不记录文件路径")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            if !history.records.isEmpty {
-                Button(role: .destructive) {
-                    showClearConfirm = true
-                } label: {
-                    Label("清空历史", systemImage: "trash")
-                }
-            }
+            Text("累计释放量与趋势，只记录体积不记录文件路径")
+                .font(.ppgCaption)
+                .foregroundStyle(PPG.ink.opacity(0.6))
+                .padding(.leading, 24)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
+        .background(PPG.cream.opacity(0.7))
+    }
+
+    /// 破坏性操作：红底白字。确认弹窗的文案与 role 均保持不变。
+    @ViewBuilder
+    private var clearHistoryButton: some View {
+        if !history.records.isEmpty {
+            Button(role: .destructive) {
+                showClearConfirm = true
+            } label: {
+                Label("清空历史", systemImage: "trash")
+            }
+            .buttonStyle(ComicButtonStyle(tint: PPG.dangerDeep, size: .regular, textColor: .white))
+        }
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: 44))
-                .foregroundStyle(.tertiary)
-            Text("还没有清理记录")
-                .font(.title3)
-            Text("完成一次清理后，这里会显示累计释放量和趋势")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ComicEmptyState(
+            icon: "chart.bar.xaxis",
+            title: "还没有清理记录",
+            message: "完成一次清理后，这里会显示累计释放量和趋势",
+            tint: PPG.grape
+        )
+        .comicCard(tint: PPG.grape, padding: 10)
+        .padding(18)
     }
 
     // MARK: - 汇总卡片
@@ -88,19 +89,19 @@ struct HistoryView: View {
                 title: "累计释放",
                 value: Fmt.size(history.totalFreed),
                 icon: "arrow.down.circle.fill",
-                color: .green
+                color: PPG.buttercup
             )
             summaryCard(
                 title: "清理次数",
                 value: "\(history.records.count)",
                 icon: "checkmark.circle.fill",
-                color: .blue
+                color: PPG.bubbles
             )
             summaryCard(
                 title: "清理项目",
                 value: "\(history.totalItems)",
                 icon: "doc.fill",
-                color: .orange
+                color: PPG.sunny
             )
             summaryCard(
                 title: "最近一次",
@@ -108,53 +109,67 @@ struct HistoryView: View {
                     $0.date.formatted(date: .abbreviated, time: .shortened)
                 } ?? "—",
                 icon: "clock.fill",
-                color: .purple
+                color: PPG.grape
             )
         }
     }
 
     private func summaryCard(title: String, value: String, icon: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: icon)
-                .font(.caption)
-                .foregroundStyle(color)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                ZStack {
+                    Circle()
+                        .fill(color)
+                        .overlay { Circle().strokeBorder(PPG.ink, lineWidth: 1.8) }
+                        .frame(width: 24, height: 24)
+                    Image(systemName: icon)
+                        .font(.ppg(11, .black))
+                        .foregroundStyle(PPG.ink)
+                }
+
+                Text(title)
+                    .font(.ppg(12, .heavy))
+                    .foregroundStyle(PPG.ink.opacity(0.7))
+            }
+
             Text(value)
-                .font(.title3.weight(.semibold))
+                .font(.ppg(17, .black))
+                .foregroundStyle(PPG.ink)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .comicCard(tint: color, padding: 13)
     }
 
     // MARK: - 趋势图
 
     private var chartCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("每日释放量")
-                    .font(.callout.weight(.semibold))
-                Spacer()
-                Picker("", selection: $rangeDays) {
-                    ForEach(rangeOptions, id: \.self) { d in
-                        Text("近 \(d) 天").tag(d)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 220)
-            }
+            ComicSectionHeader(
+                "每日释放量",
+                icon: "chart.bar.fill",
+                tint: PPG.blossom,
+                trailing: AnyView(rangeButtons)
+            )
 
             let data = history.dailyFreed(days: rangeDays)
             let peak = max(data.map(\.freed).max() ?? 0, 1)
 
             HStack(alignment: .bottom, spacing: 3) {
-                ForEach(Array(data.enumerated()), id: \.offset) { _, point in
+                ForEach(Array(data.enumerated()), id: \.offset) { idx, point in
                     VStack(spacing: 3) {
                         // 顶部留白，让柱子高度差异可见
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(point.freed > 0 ? Color.accentColor : Color.secondary.opacity(0.15))
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(point.freed > 0 ? PPG.girl(idx) : PPG.ink.opacity(0.08))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .strokeBorder(
+                                        PPG.ink.opacity(point.freed > 0 ? 0.85 : 0.12),
+                                        lineWidth: 1
+                                    )
+                            }
                             .frame(height: max(2, CGFloat(Double(point.freed) / Double(peak)) * 110))
                             .help("\(point.date.formatted(date: .abbreviated, time: .omitted))：\(Fmt.size(point.freed))")
                     }
@@ -170,11 +185,30 @@ struct HistoryView: View {
                 Spacer()
                 Text(data.last?.date.formatted(date: .abbreviated, time: .omitted) ?? "")
             }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .font(.ppgCaption)
+            .foregroundStyle(PPG.ink.opacity(0.5))
+            .monospacedDigit()
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .comicCard(tint: PPG.blossom, padding: 16)
+    }
+
+    /// 时间范围选择。原来 220pt 宽的分段控件换成三颗卡通按钮，
+    /// 命中区从系统控件的 ~22pt 提到 42pt。
+    @ViewBuilder
+    private var rangeButtons: some View {
+        HStack(spacing: 8) {
+            ForEach(rangeOptions, id: \.self) { d in
+                let isOn = rangeDays == d
+                Button("近 \(d) 天") { rangeDays = d }
+                    .buttonStyle(ComicButtonStyle(
+                        tint: isOn ? PPG.blossom : PPG.cream,
+                        size: .regular,
+                        burst: false,
+                        textColor: isOn ? .white : PPG.ink,
+                        outlined: !isOn
+                    ))
+            }
+        }
     }
 
     // MARK: - 分类汇总
@@ -183,89 +217,103 @@ struct HistoryView: View {
     private var categoryCard: some View {
         let cats = history.freedByCategory()
         if !cats.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("按类别累计")
-                    .font(.callout.weight(.semibold))
+            VStack(alignment: .leading, spacing: 12) {
+                ComicSectionHeader("按类别累计", icon: "square.grid.2x2.fill", tint: PPG.bubbles)
 
                 let maxFreed = max(cats.first?.freed ?? 1, 1)
-                ForEach(Array(cats.enumerated()), id: \.offset) { _, entry in
+                ForEach(Array(cats.enumerated()), id: \.offset) { idx, entry in
+                    // 按固定序号循环取主题色，不用 hashValue（每进程加盐，重启后颜色错位）
+                    let tint = PPG.girl(idx)
+
                     HStack(spacing: 10) {
-                        Image(systemName: entry.category.symbol)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 18)
+                        ZStack {
+                            Circle()
+                                .fill(tint)
+                                .overlay { Circle().strokeBorder(PPG.ink, lineWidth: 1.8) }
+                                .frame(width: 24, height: 24)
+                            Image(systemName: entry.category.symbol)
+                                .font(.ppg(11, .black))
+                                .foregroundStyle(PPG.ink)
+                        }
 
                         Text(entry.category.title)
-                            .font(.caption)
-                            .frame(width: 90, alignment: .leading)
+                            .font(.ppg(12.5, .heavy))
+                            .foregroundStyle(PPG.ink)
+                            .frame(width: 96, alignment: .leading)
 
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(Color.secondary.opacity(0.12))
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(Color.accentColor.opacity(0.7))
-                                    .frame(width: max(3, geo.size.width * CGFloat(Double(entry.freed) / Double(maxFreed))))
-                            }
-                        }
-                        .frame(height: 12)
+                        ComicProgressBar(
+                            value: Double(entry.freed) / Double(maxFreed),
+                            tint: tint,
+                            height: 12
+                        )
 
                         Text(Fmt.size(entry.freed))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.ppg(12.5, .black))
+                            .foregroundStyle(PPG.ink)
                             .monospacedDigit()
-                            .frame(width: 70, alignment: .trailing)
+                            .frame(width: 74, alignment: .trailing)
                     }
                 }
             }
-            .padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .comicCard(tint: PPG.bubbles, padding: 16)
         }
     }
 
     // MARK: - 最近记录
 
     private var recentCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("最近记录")
-                .font(.callout.weight(.semibold))
+        VStack(alignment: .leading, spacing: 12) {
+            ComicSectionHeader("最近记录", icon: "clock.arrow.circlepath", tint: PPG.grape)
 
-            VStack(spacing: 0) {
+            VStack(spacing: 4) {
                 ForEach(Array(history.records.suffix(20).reversed().enumerated()), id: \.element.id) { idx, rec in
                     HStack(spacing: 12) {
-                        Image(systemName: rec.failureCount > 0 ? "exclamationmark.circle" : "checkmark.circle")
-                            .foregroundStyle(rec.failureCount > 0 ? .orange : .green)
+                        ZStack {
+                            Circle()
+                                .fill(rec.failureCount > 0 ? PPG.danger : PPG.buttercup)
+                                .overlay { Circle().strokeBorder(PPG.ink, lineWidth: 1.8) }
+                                .frame(width: 26, height: 26)
+                            Image(systemName: rec.failureCount > 0 ? "exclamationmark.circle" : "checkmark.circle")
+                                .font(.ppg(12, .black))
+                                .foregroundStyle(PPG.ink)
+                        }
 
                         Text(rec.date.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption)
+                            .font(.ppg(12, .heavy))
+                            .foregroundStyle(PPG.ink.opacity(0.8))
+                            .monospacedDigit()
                             .frame(width: 150, alignment: .leading)
 
                         Text("\(rec.itemCount) 项")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 60, alignment: .leading)
+                            .font(.ppgCaption)
+                            .foregroundStyle(PPG.ink.opacity(0.55))
+                            .monospacedDigit()
+                            .frame(width: 62, alignment: .leading)
 
                         if rec.failureCount > 0 {
-                            Text("\(rec.failureCount) 项失败")
-                                .font(.caption2)
-                                .foregroundStyle(.orange)
+                            ComicBadge(text: "\(rec.failureCount) 项失败",
+                                       tint: PPG.danger,
+                                       icon: "exclamationmark.triangle.fill")
                         }
 
                         Spacer()
 
                         Text(Fmt.size(rec.freed))
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(.green)
+                            .font(.ppg(13.5, .black))
+                            .foregroundStyle(PPG.ink)
                             .monospacedDigit()
                     }
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-
-                    if idx != min(history.records.count, 20) - 1 {
-                        Divider().padding(.leading, 36)
+                    .padding(.vertical, 7)
+                    // 斑马纹：行内没有可执行操作，所以不做整行点击，
+                    // 只靠交替底色帮横向读表
+                    .background {
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .fill(idx.isMultiple(of: 2) ? PPG.ink.opacity(0.045) : .clear)
                     }
                 }
             }
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         }
+        .comicCard(tint: PPG.grape, padding: 16)
     }
 }

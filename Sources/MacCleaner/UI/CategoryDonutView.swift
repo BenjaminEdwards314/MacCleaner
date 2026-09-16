@@ -22,7 +22,8 @@ struct CategoryDonutView: View {
     var body: some View {
         VStack(spacing: 18) {
             ZStack {
-                Circle().stroke(Color.secondary.opacity(0.12), lineWidth: 26)
+                Circle().stroke(PPG.cream, lineWidth: 26)
+                Circle().strokeBorder(PPG.ink.opacity(0.9), lineWidth: 2.2)
 
                 ForEach(segments, id: \.0) { seg in
                     Circle()
@@ -39,13 +40,14 @@ struct CategoryDonutView: View {
                         .help("\(seg.0.title)：\(Fmt.size(seg.1))")
                 }
 
-                VStack(spacing: 2) {
+                VStack(spacing: 1) {
                     Text(Fmt.size(total))
-                        .font(.system(size: 22, weight: .semibold, design: .rounded))
+                        .font(.ppg(21, .black))
+                        .foregroundStyle(PPG.ink)
                         .monospacedDigit()
                     Text("可清理总量")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.ppg(10.5, .bold))
+                        .foregroundStyle(PPG.ink.opacity(0.5))
                 }
             }
             .frame(width: 180, height: 180)
@@ -54,17 +56,29 @@ struct CategoryDonutView: View {
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(groups) { g in
                     HStack(spacing: 8) {
-                        RoundedRectangle(cornerRadius: 3)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(color(for: g.category))
-                            .frame(width: 11, height: 11)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .strokeBorder(PPG.ink, lineWidth: 1.8)
+                            }
+                            .frame(width: 14, height: 14)
                         Text(g.category.title)
-                            .font(.caption)
-                            .fontWeight(selected == g.category ? .semibold : .regular)
+                            .font(.ppg(12.5, selected == g.category ? .black : .semibold))
+                            .foregroundStyle(PPG.ink)
                         Spacer()
                         Text(Fmt.size(g.totalSize))
-                            .font(.caption)
+                            .font(.ppg(12.5, .heavy))
                             .monospacedDigit()
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(PPG.ink.opacity(0.6))
+                    }
+                    .padding(.vertical, 3)
+                    .padding(.horizontal, 6)
+                    .background {
+                        if selected == g.category {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(color(for: g.category).opacity(0.28))
+                        }
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -75,21 +89,20 @@ struct CategoryDonutView: View {
             }
             .frame(maxWidth: 230)
         }
-        .padding(22)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .comicCard(tint: PPG.grape, padding: 20)
     }
 
     func color(for c: CleanupCategory) -> Color {
         switch c {
-        case .userCache: return .blue
-        case .systemCache: return .cyan
-        case .logs: return .gray
-        case .trash: return .brown
-        case .developerCache: return .purple
-        case .crashReports: return .red
-        case .crashpad: return .yellow
-        case .downloadsOld: return .orange
-        case .appSupport: return .indigo
+        case .userCache: return PPG.bubbles
+        case .systemCache: return Color(red: 0.42, green: 0.88, blue: 0.90)
+        case .logs: return Color(red: 0.72, green: 0.70, blue: 0.78)
+        case .trash: return Color(red: 0.85, green: 0.66, blue: 0.42)
+        case .developerCache: return PPG.grape
+        case .crashReports: return PPG.danger
+        case .crashpad: return PPG.sunny
+        case .downloadsOld: return Color(red: 1.00, green: 0.60, blue: 0.32)
+        case .appSupport: return Color(red: 0.55, green: 0.62, blue: 0.98)
         case .largeFiles: return .pink
         case .tempFiles: return .teal
         // 这三个类别不出现在清理页的环形图里（它们来自重复文件/卸载视图），
