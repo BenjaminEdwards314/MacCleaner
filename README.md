@@ -17,7 +17,7 @@ open build/MacCleaner.app
 构建产物：`build/MacCleaner.app`（约 3.1 MB，无外部依赖）
 
 需要可分发的安装包时用 `./package.sh` —— 它会编译 arm64 + x86_64
-并合并为通用二进制，再打成 `build/MacCleaner-1.1.dmg`。
+并合并为通用二进制，再打成 `build/MacCleaner-1.2.dmg`。
 
 跑测试：`./run_tests.sh`（6 个测试文件，覆盖安全护栏、重复文件哈希、
 应用残留匹配、卸载残余判定、历史持久化、磁盘信息解析）。
@@ -364,7 +364,7 @@ free 常年很低是正常现象。只统计 free 会严重低估可用量。
 ```
 MacCleaner/
 ├── build.sh                              # 构建脚本 → build/MacCleaner.app
-├── package.sh                            # 打包脚本 → build/MacCleaner-1.1.dmg（通用二进制）
+├── package.sh                            # 打包脚本 → build/MacCleaner-1.2.dmg（通用二进制）
 ├── run_tests.sh                          # 测试运行器（独立可执行测试，非 XCTest）
 ├── make_icon.py                          # 生成图标（Pillow 手绘，非必需）
 ├── demo.html                             # 界面演示网页，独立于应用本体

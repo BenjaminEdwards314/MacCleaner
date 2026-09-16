@@ -11,8 +11,8 @@ SRC="$PROJ/Sources/MacCleaner"
 OUT="$PROJ/build"
 APP="$OUT/MacCleaner.app"
 STAGE="$OUT/dmg-stage"
-VERSION="1.1"                      # 发布版本号，改这里即可
-BUILD_NUM="2"                      # CFBundleVersion，每次发布 +1
+VERSION="1.2"                      # 发布版本号，改这里即可
+BUILD_NUM="3"                      # CFBundleVersion，每次发布 +1
 DMG="$OUT/MacCleaner-$VERSION.dmg"
 VOLNAME="MacCleaner 安装"
 SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk"
@@ -112,10 +112,19 @@ MacCleaner —— macOS 存储查看与清理工具
   xattr -d com.apple.quarantine /Applications/MacCleaner.app
 
 使用：
-  1. 顶栏切换「清理 / 空间 / 内存」三个页面
-  2. 清理页：点「快速扫描」→ 勾选项目（或点「全选安全项」）→ 点「清理所选」
-  3. 空间页：树图看「空间去哪了」，单击钻取、双击在 Finder 中显示
-  4. 内存页：实时查看内存分布与占用最高的进程（只读，不会结束任何进程）
+  左侧边栏切换功能，分三组共 8 个页面。
+
+  存储
+    清理      扫描缓存、日志与开发残留，勾选后清理
+    空间      矩形树图看「空间去哪了」，单击钻取、双击在访达中显示
+    重复文件  按内容哈希找出完全相同的文件
+  系统
+    内存      实时内存分布与占用最高的进程（只读，不会结束任何进程）
+  工具
+    应用卸载  删除应用本体，并一并清理它在 ~/Library 里的残留
+    卸载残余  找出已删除应用留下的无主文件
+    清理历史  累计释放量与趋势
+    磁盘健康  文件系统 / APFS 容器 / 快照 / SMART 状态
 
 所有清理都会移入废纸篓，可随时恢复。
 

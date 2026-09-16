@@ -48,8 +48,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleIdentifier</key>        <string>com.local.maccleaner</string>
     <key>CFBundleExecutable</key>        <string>MacCleaner</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.1</string>
-    <key>CFBundleVersion</key>           <string>1</string>
+    <key>CFBundleShortVersionString</key><string>1.2</string>
+    <key>CFBundleVersion</key>           <string>3</string>
     <key>LSMinimumSystemVersion</key>    <string>15.0</string>
     <key>NSHighResolutionCapable</key>   <true/>
     <key>NSSupportsAutomaticTermination</key><false/>
