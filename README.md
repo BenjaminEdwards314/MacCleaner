@@ -6,6 +6,9 @@
 
 ![平台](https://img.shields.io/badge/macOS-15%2B-blue) ![Swift](https://img.shields.io/badge/Swift-6.1-orange)
 
+> **图文介绍页**：想先看图再看字，打开 [`docs/index.html`](docs/index.html) ——
+> 八个功能逐一配实机截图说明。下载后双击即可，无需服务器。
+
 ## 快速开始
 
 ```bash
