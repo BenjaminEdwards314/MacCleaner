@@ -17,7 +17,7 @@ open build/MacCleaner.app
 构建产物：`build/MacCleaner.app`（约 3.1 MB，无外部依赖）
 
 需要可分发的安装包时用 `./package.sh` —— 它会编译 arm64 + x86_64
-并合并为通用二进制，再打成 `build/MacCleaner-1.0.dmg`。
+并合并为通用二进制，再打成 `build/MacCleaner-1.1.dmg`。
 
 跑测试：`./run_tests.sh`（6 个测试文件，覆盖安全护栏、重复文件哈希、
 应用残留匹配、卸载残余判定、历史持久化、磁盘信息解析）。
@@ -33,7 +33,7 @@ open build/MacCleaner.app
 | 存储 | 重复文件 | 内容哈希查找重复副本 |
 | 系统 | 内存 | 实时内存观测 |
 | 工具 | 应用卸载 | 应用本体 + 残留清理 |
-| 工具 | 卸载残余 | 已删除应用留下的无主文件（本机 3.02 GB）|
+| 工具 | 卸载残余 | 已删除应用留下的无主文件 |
 | 工具 | 清理历史 | 累计释放量与趋势 |
 | 工具 | 磁盘健康 | 文件系统 / APFS / SMART |
 
@@ -333,7 +333,7 @@ free 常年很低是正常现象。只统计 free 会严重低估可用量。
 ```
 MacCleaner/
 ├── build.sh                              # 构建脚本 → build/MacCleaner.app
-├── package.sh                            # 打包脚本 → build/MacCleaner-1.0.dmg（通用二进制）
+├── package.sh                            # 打包脚本 → build/MacCleaner-1.1.dmg（通用二进制）
 ├── run_tests.sh                          # 测试运行器（独立可执行测试，非 XCTest）
 ├── make_icon.py                          # 生成图标（Pillow 手绘，非必需）
 ├── demo.html                             # 界面演示网页，独立于应用本体

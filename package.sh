@@ -3,7 +3,7 @@
 #
 # 产出:
 #   build/MacCleaner.app        通用二进制 (arm64 + x86_64)
-#   build/MacCleaner-1.0.dmg    安装镜像（双击挂载 → 拖入 Applications）
+#   build/MacCleaner-<VERSION>.dmg  安装镜像（双击挂载 → 拖入 Applications）
 set -euo pipefail
 
 PROJ="$(cd "$(dirname "$0")" && pwd)"
@@ -11,7 +11,9 @@ SRC="$PROJ/Sources/MacCleaner"
 OUT="$PROJ/build"
 APP="$OUT/MacCleaner.app"
 STAGE="$OUT/dmg-stage"
-DMG="$OUT/MacCleaner-1.0.dmg"
+VERSION="1.1"                      # 发布版本号，改这里即可
+BUILD_NUM="2"                      # CFBundleVersion，每次发布 +1
+DMG="$OUT/MacCleaner-$VERSION.dmg"
 VOLNAME="MacCleaner 安装"
 SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX15.sdk"
 
@@ -50,7 +52,7 @@ lipo -info "$APP/Contents/MacOS/MacCleaner" | sed 's/^/    /'
 
 # ---------- 2. Info.plist ----------
 echo "==> 写入 Info.plist"
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -60,8 +62,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleIdentifier</key>        <string>com.local.maccleaner</string>
     <key>CFBundleExecutable</key>        <string>MacCleaner</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key>           <string>1</string>
+    <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+    <key>CFBundleVersion</key>           <string>${BUILD_NUM}</string>
     <key>LSMinimumSystemVersion</key>    <string>15.0</string>
     <key>NSHighResolutionCapable</key>   <true/>
     <key>NSSupportsAutomaticTermination</key><false/>
